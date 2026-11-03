@@ -1,0 +1,23 @@
+# Python virtual environments
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local secrets
+.env
+.env.*
+!.env.example
+*.key
+
+# AI model weights
+*.gguf
+*.safetensors
+*.pt
+*.pth
+
+# Local caches
+.cache/
