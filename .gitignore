@@ -1,5 +1,7 @@
+
 # Python virtual environments
 .venv/
+.venv-*/
 venv/
 
 # Python cache
@@ -12,12 +14,25 @@ __pycache__/
 .env.*
 !.env.example
 *.key
+agentdriver/llm_core/api_keys.py
 
 # AI model weights
 *.gguf
 *.safetensors
 *.pt
 *.pth
+
+# AgentDriver datasets
+data/train/
+data/val/
+data/finetune/
+data/memory/
+data/metrics/
+*.pkl
+
+# Experimental outputs
+results/
+experiments/results/
 
 # Local caches
 .cache/
