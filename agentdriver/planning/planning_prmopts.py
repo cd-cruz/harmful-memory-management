@@ -18,4 +18,8 @@ Task:
 
 Output:
 Planned Trajectory:\n[(x1,y1), (x2,y2), ... , (x6,y6)]
+
+Strictly follow the output format. Do not explain or add extra text.
 """
+
+# Added line 22 to ensure the output format is correct

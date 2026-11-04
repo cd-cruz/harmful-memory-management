@@ -4,16 +4,29 @@ from agentdriver.llm_core.timeout import timeout
 from agentdriver.memory.common_sense_memory import CommonSenseMemory
 from agentdriver.memory.experience_memory import ExperienceMemory
 
+
 class MemoryAgent:
-    def __init__(self, data_path, model_name="gpt-3.5-turbo-0613", verbose=False, compare_perception=False) -> None:
+    def __init__(
+        self,
+        data_path,
+        model_name="",
+        verbose=False,
+        compare_perception=False,
+    ) -> None:
         self.model_name = model_name
         self.common_sense_memory = CommonSenseMemory()
-        self.experience_memory = ExperienceMemory(data_path, model_name=self.model_name, verbose=verbose, compare_perception=compare_perception)
+        # self.experience_memory = ExperienceMemory(data_path, model_name=self.model_name, verbose=verbose, compare_perception=compare_perception, embed_model=embed_model, embed_tokenizer=embed_tokenizer)
+        self.experience_memory = ExperienceMemory(
+            data_path,
+            model_name=self.model_name,
+            verbose=verbose,
+            compare_perception=compare_perception,
+        )
         self.verbose = verbose
 
     def retrieve(self, working_memory):
         raise NotImplementedError
-    
+
     def retrieve_common_sense_memory(self, knowledge_types: list = None):
         return self.common_sense_memory.retrieve(knowledge_types=knowledge_types)
 
@@ -30,4 +43,12 @@ class MemoryAgent:
     def run(self, working_memory):
         common_sense_prompts = self.retrieve_common_sense_memory()
         experience_prompt = self.retrieve_experience_memory(working_memory)
+        return common_sense_prompts, experience_prompt
+
+    @timeout(15)
+    def run_with_specified_retrieval(self, working_memory, query_token):
+        common_sense_prompts = self.retrieve_common_sense_memory()
+        experience_prompt = self.experience_memory.retrieve_a_specific_memory(
+            working_memory, query_token
+        )
         return common_sense_prompts, experience_prompt
