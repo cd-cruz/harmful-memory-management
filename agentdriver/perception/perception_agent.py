@@ -14,7 +14,7 @@ from agentdriver.perception.perception_prompts import (
 )
 
 class PerceptionAgent:
-    def __init__(self, token, split, data_path, model_name = "gpt-3.5-turbo-0613", verbose=True) -> None:
+    def __init__(self, token, split, data_path, model_name = "qwen3:14b", verbose=True) -> None:
         self.token = token
         folder_name = Path("val") if "val" in split else Path("train")
         self.file_name = data_path / folder_name / Path(f"{self.token}.pkl")
