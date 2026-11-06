@@ -31,8 +31,12 @@ class PerceptionAgent:
 
     def functional_call(self, response_message):
         # Call the function from GPT response
-        function_name = response_message["function_call"]["name"]
-        function_args = json.loads(response_message["function_call"]["arguments"])
+        tool_calls = response_message["tool_calls"]
+        if len(tool_calls) != 1:
+            raise ValueError("Expected exactly one tool call in the response.")
+        tool_call = tool_calls[0]
+        function_name = tool_call["function"]["name"]
+        function_args = json.loads(tool_call["function"]["arguments"])
         function_to_call = getattr(self.func_agent, function_name)
         if not callable(function_to_call):
             print(f"Function {function_name} is not callable!")
@@ -49,6 +53,7 @@ class PerceptionAgent:
                 "args": function_args,
                 "prompt": function_prmopt,
                 "data": function_ret_data,
+                "tool_call_id": tool_call["id"],
             }
         if self.verbose:
             print(function_name)
@@ -169,14 +174,14 @@ class PerceptionAgent:
                     print(detection_func_response["content"])
 
                 # Check if functional call is triggered
-                if detection_func_response.get("function_call"):
+                if detection_func_response.get("tool_calls"):
                     function_response = self.functional_call(detection_func_response)
                     # Append function response to conversation
                     if function_response is not None:
                         full_messages.append(
                             {
-                                "role": "function",
-                                "name": function_response["name"],
+                                "role": "tool",
+                                "tool_call_id": function_response["tool_call_id"],
                                 "content": function_response["prompt"],
                             }
                         )
@@ -214,14 +219,14 @@ class PerceptionAgent:
                     print(prediction_func_response["content"])
 
                 # Check if functional call is triggered
-                if prediction_func_response.get("function_call"):
+                if prediction_func_response.get("tool_calls"):
                     function_response = self.functional_call(prediction_func_response)
                     # Append function response to conversation
                     if function_response is not None:
                         full_messages.append(
                             {
-                                "role": "function",
-                                "name": function_response["name"],
+                                "role": "tool",
+                                "tool_call_id": function_response["tool_call_id"],
                                 "content": function_response["prompt"],
                             }
                         )
@@ -259,14 +264,14 @@ class PerceptionAgent:
                     print(occupancy_func_response["content"])
 
                 # Check if functional call is triggered
-                if occupancy_func_response.get("function_call"):
+                if occupancy_func_response.get("tool_calls"):
                     function_response = self.functional_call(occupancy_func_response)
                     # Append function response to conversation
                     if function_response is not None:
                         full_messages.append(
                             {
-                                "role": "function",
-                                "name": function_response["name"],
+                                "role": "tool",
+                                "tool_call_id": function_response["tool_call_id"],
                                 "content": function_response["prompt"],
                             }
                         )
@@ -304,14 +309,14 @@ class PerceptionAgent:
                     print(map_func_response["content"])
 
                 # Check if functional call is triggered
-                if map_func_response.get("function_call"):
+                if map_func_response.get("tool_calls"):
                     function_response = self.functional_call(map_func_response)
                     # Append function response to conversation
                     if function_response is not None:
                         full_messages.append(
                             {
-                                "role": "function",
-                                "name": function_response["name"],
+                                "role": "tool",
+                                "tool_call_id": function_response["tool_call_id"],
                                 "content": function_response["prompt"],
                             }
                         )

@@ -10,8 +10,9 @@ from tenacity import (
 def completion_with_backoff(**kwargs):
     # OpenAI API
     ## return openai.ChatCompletion.create(**kwargs)
-    client = openai.OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
-    return client.chat.completions.create(**kwargs)
+    openai.api_base = "http://localhost:11434/v1"
+    openai.api_key = "ollama"
+    return openai.ChatCompletion.create(**kwargs)
 
     # Together API
     # client = together.Together(api_key=together.api_key)

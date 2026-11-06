@@ -6,7 +6,7 @@ from typing import List, Dict
 from agentdriver.llm_core.chat_utils import completion_with_backoff
 from agentdriver.llm_core.timeout import timeout
 
-@timeout(15)
+@timeout(120)
 def run_one_round_conversation(
         full_messages: List[Dict],
         system_message: str,
@@ -30,8 +30,7 @@ def run_one_round_conversation(
         temperature=temperature,
     )
 
-    response = response.model_dump()
-    response_message = response["choices"][0]["message"]
+    response_message = response["choices"][0]["message"].to_dict_recursive()
     # response_message = response.choices[0].message
 
     # Append assistant's reply to conversation
@@ -61,12 +60,11 @@ def run_one_round_conversation_with_functional_call(
         model=model_name,
         messages=full_messages,
         temperature=temperature,
-        functions=functional_calls_info,
-        function_call="auto",
+        tools=[{"type": "function", "function": info} for info in functional_calls_info],
+        tool_choice="auto",
     )
 
-    response = response.model_dump()
-    response_message = response["choices"][0]["message"]
+    response_message = response["choices"][0]["message"].to_dict_recursive()
     # response_message = response.choices[0].message
 
     # Append assistant's reply to conversation
