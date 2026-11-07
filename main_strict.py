@@ -7,24 +7,19 @@ import time
 from pathlib import Path
 
 import numpy as np
-import openai
 import pandas as pd
 from tqdm import tqdm
 
-from agentdriver.llm_core.api_keys import (
-    OPENAI_API_KEY,
-    OPENAI_ORG,
-    FINETUNE_PLANNER_NAME,
-)
+from agentdriver.llm_core.api_keys import FINETUNE_PLANNER_NAME
 from agentdriver.main.language_agent import LanguageAgent
 from agentdriver.memory.memory_agent import MemoryAgent
 from agentdriver.perception.perception_agent import PerceptionAgent
 from agentdriver.planning.planning_agent import PlanningAgent
 from agentdriver.reasoning.reasoning_agent import ReasoningAgent
 
-EXPERIMENT_NAME = "example_addstrict_exp"
+EXPERIMENT_NAME = "qwen3_14b_addstrict_test"
 RANDOM_SEED = 0
-N_SAMPLES = 2000
+N_SAMPLES = 2
 SUCCESS_L2_THRESHOLD = 2.5  # add when l2 < this. 0.0 = no add, 99999.0 = always add
 DELETION_L2_THRESHOLD = 99999.0  # del when history l2 > this. 99999.0 = no deletion    #2.5
 DELETION_RETREIVAL_N_TIMES = 99999  # del when ret time >= this. 99999 = no deletion      #3
@@ -36,8 +31,6 @@ ADD_GT = False  # WE NEVER USED THIS OPTION. TO RUN ERROR-FREE EXPERIMENT, USE `
 
 
 random.seed(RANDOM_SEED)
-openai.api_key = OPENAI_API_KEY
-openai.organization = OPENAI_ORG
 
 
 def convert_working_memory_to_memory(working_memory, perception_agent, planning_traj):
@@ -408,7 +401,7 @@ for token in tqdm(token_list, desc="Processing tokens"):
         print(f"{type(e).__name__}: {e}")
         invalid_tokens.append(token)
         # raise e       # TO DEBUG, UNCOMMENT THIS
-        continue
+        raise
 
 print(f"Invalid tokens: {invalid_tokens}")
 print(
