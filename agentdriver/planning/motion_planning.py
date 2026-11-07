@@ -67,7 +67,15 @@ def planning_single_inference(
 
     full_messages, response_message =  run_one_round_conversation(
         full_messages = [], 
-        system_message = system_message, 
+        system_message=(system_message + "\n"
+        "Return ONLY six future (x,y) waypoints at 0.5s intervals "
+        "from 0.5s to 3.0s, relative to the current ego position. "
+        "Use this exact Python format: "
+        "[(x1,y1),(x2,y2),(x3,y3),(x4,y4),(x5,y5),(x6,y6)]. "
+        "Replace x1,y1,etc. with numbers. "
+        "No explanation, Markdown, or equations."
+        if planner_model_id == "qwen3:14b"
+        else system_message),
         user_message = user_message,
         temperature = 0.0,
         model_name = planner_model_id,

@@ -12,7 +12,7 @@ from agentdriver.planning.motion_planning import (
 )
 
 class PlanningAgent:
-    def __init__(self, model_name="", verbose=True) -> None:
+    def __init__(self, model_name="qwen3:14b", verbose=True) -> None:
         self.verbose = verbose
         self.model_name = model_name # Note: this model must be a **finetuned** GPT model
         if model_name == "" or model_name[:2] != "ft":
@@ -32,7 +32,7 @@ class PlanningAgent:
         planning_target = self.generate_planning_target(data_dict)
         return planning_target
     
-    @timeout(15)
+    @timeout(180)
     def run(self, data_dict, data_sample):
         """Generate motion planning results for a single scene"""
         planning_traj = planning_single_inference(

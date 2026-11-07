@@ -32,9 +32,8 @@ class PerceptionAgent:
     def functional_call(self, response_message):
         # Call the function from GPT response
         tool_calls = response_message["tool_calls"]
-        if len(tool_calls) != 1:
-            raise ValueError("Expected exactly one tool call in the response.")
         tool_call = tool_calls[0]
+        response_message["tool_calls"] = [tool_call]  
         function_name = tool_call["function"]["name"]
         function_args = json.loads(tool_call["function"]["arguments"])
         function_to_call = getattr(self.func_agent, function_name)
@@ -160,7 +159,7 @@ class PerceptionAgent:
         if self.verbose:
             print(detection_response["content"])
 
-        if detection_response["content"] == "YES":
+        if (detection_response.get("content") or "").strip().upper() == "YES":
             for _ in range(self.num_call_detection_times):
                 full_messages, detection_func_response = run_one_round_conversation_with_functional_call(
                     full_messages=full_messages, 
@@ -205,7 +204,7 @@ class PerceptionAgent:
         if self.verbose:
             print(prediction_response["content"])
 
-        if prediction_response["content"] == "YES":
+        if (prediction_response.get("content") or "").strip().upper() == "YES":
             for _ in range(self.num_call_prediction_times):
                 full_messages, prediction_func_response = run_one_round_conversation_with_functional_call(
                     full_messages=full_messages, 
@@ -250,7 +249,7 @@ class PerceptionAgent:
         if self.verbose:
             print(occupancy_response["content"])
 
-        if occupancy_response["content"] == "YES":
+        if (occupancy_response.get("content") or "").strip().upper() == "YES":
             for _ in range(self.num_call_occupancy_times):
                 full_messages, occupancy_func_response = run_one_round_conversation_with_functional_call(
                     full_messages=full_messages, 
@@ -295,7 +294,7 @@ class PerceptionAgent:
         if self.verbose:
             print(map_response["content"])
 
-        if map_response["content"] == "YES":
+        if (map_response.get("content") or "").strip().upper() == "YES":
             for _ in range(self.num_call_map_times):
                 full_messages, map_func_response = run_one_round_conversation_with_functional_call(
                     full_messages=full_messages, 
@@ -350,7 +349,7 @@ class PerceptionAgent:
         working_memory.update({"ego_prompts": ego_prompts})
         return perception_prompts, working_memory
 
-    @timeout(15)
+    @timeout(600)
     def run(self):
         ego_prompts, ego_data = self.func_agent.get_ego_states()
         full_messages, func_responses = self.get_perception_results(ego_prompts)

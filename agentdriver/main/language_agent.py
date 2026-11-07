@@ -12,7 +12,7 @@ from agentdriver.reasoning.reasoning_agent import ReasoningAgent
 from agentdriver.planning.planning_agent import PlanningAgent
 
 class LanguageAgent:
-    def __init__(self, data_path, split, model_name = "gpt-3.5-turbo-0613", planner_model_name="", finetune_cot=False, verbose=False) -> None:
+    def __init__(self, data_path, split, model_name = "qwen3:14b", planner_model_name="qwen3:14b", finetune_cot=False, verbose=False) -> None:
         self.data_path = data_path
         self.split = split
         self.split_dict = json.load(open(Path(data_path) / "split.json", "r"))
