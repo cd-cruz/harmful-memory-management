@@ -186,7 +186,18 @@ def check_occupancy_for_planned_trajectory_correct(trajectory, data_dict, safe_m
     trajs: torch.Tensor (B, n_future, 2)
     segmentation: torch.Tensor (B, n_future, 200, 200)
     '''
-    occ_map = data_dict["occupancy"]
+    occ_map = np.asanyarray(data_dict["occupancy"])
+
+    # Handle occupancy arrays with an extra singleton dimension
+    if occ_map.ndim == 4 and occ_map.shape[1] == 1:
+    occ_map = np.squeeze(occ_map, axis=1)
+
+    if occ_map.ndim != 3:
+        raise ValueError(
+            f"Invalid occupancy shape for token {token}: "
+            f"expected a 3D array, received {occ_map.shape}"
+        )
+
 
     occ_map = np.fliplr(occ_map.transpose(1,2,0)).transpose(2,0,1)
     occ_map = occ_map[1:] # remove the current timestep

@@ -17,9 +17,9 @@ from agentdriver.perception.perception_agent import PerceptionAgent
 from agentdriver.planning.planning_agent import PlanningAgent
 from agentdriver.reasoning.reasoning_agent import ReasoningAgent
 
-EXPERIMENT_NAME = "qwen3_14b_addstrict_test"
+EXPERIMENT_NAME = "qwen3_14b_addstrict_test_20"
 RANDOM_SEED = 0
-N_SAMPLES = 2
+N_SAMPLES = 20
 SUCCESS_L2_THRESHOLD = 2.5  # add when l2 < this. 0.0 = no add, 99999.0 = always add
 DELETION_L2_THRESHOLD = 99999.0  # del when history l2 > this. 99999.0 = no deletion    #2.5
 DELETION_RETREIVAL_N_TIMES = 99999  # del when ret time >= this. 99999 = no deletion      #3
