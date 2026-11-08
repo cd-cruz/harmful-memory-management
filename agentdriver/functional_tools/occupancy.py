@@ -38,7 +38,18 @@ get_occupancy_at_locations_for_timestep_info = {
 }
 
 def get_occupancy_at_locations_for_timestep(locations, timestep, data_dict):
-    occ_map = data_dict["occupancy"].transpose(0, 2, 1)
+    occ_map = np.asanyarray(data_dict["occupancy"])
+
+    if occ_map.ndim == 4 and occ_map.shape[1] == 1:
+        occ_map = np.squeeze(occ_map, axis=1)
+
+    if occ_map.ndim != 3:
+        raise ValueError(
+            f"Invalid occupancy shape: "
+            f"expected a 3D array, received {occ_map.shape}"
+        )
+    
+    occ_map = occ_map.transpose(0, 2, 1)
     occ_list = []
     prompts = "Occupancy information:\n"
 
@@ -86,7 +97,18 @@ check_occupancy_for_planned_trajectory_info = {
 }
 
 def check_occupancy_for_planned_trajectory(trajectory, data_dict):
-    occ_map = data_dict["occupancy"].transpose(0, 2, 1)
+    occ_map = np.asanyarray(data_dict["occupancy"])
+
+    if occ_map.ndim == 4 and occ_map.shape[1] == 1:
+        occ_map = np.squeeze(occ_map, axis=1)
+
+    if occ_map.ndim != 3:
+        raise ValueError(
+            f"Invalid occupancy shape: "
+            f"expected a 3D array, received {occ_map.shape}"
+        )
+    
+    occ_map = occ_map.transpose(0, 2, 1)
     prompts = "Check collision of the planned trajectory:\n"
 
     collision = False
@@ -110,7 +132,18 @@ def check_occupancy_for_planned_trajectory(trajectory, data_dict):
     return prompts, collision
 
 def check_occupancy_for_planned_trajectory_and_surrounding(trajectory, data_dict):
-    occ_map = data_dict["occupancy"].transpose(0, 2, 1)
+    occ_map = np.asanyarray(data_dict["occupancy"])
+
+    if occ_map.ndim == 4 and occ_map.shape[1] == 1:
+        occ_map = np.squeeze(occ_map, axis=1)
+
+    if occ_map.ndim != 3:
+        raise ValueError(
+            f"Invalid occupancy shape: "
+            f"expected a 3D array, received {occ_map.shape}"
+        )
+    
+    occ_map = occ_map.transpose(0, 2, 1)
     prompts = "Check collision of the planned trajectory:\n"
 
     collision = False
@@ -190,7 +223,7 @@ def check_occupancy_for_planned_trajectory_correct(trajectory, data_dict, safe_m
 
     # Handle occupancy arrays with an extra singleton dimension
     if occ_map.ndim == 4 and occ_map.shape[1] == 1:
-    occ_map = np.squeeze(occ_map, axis=1)
+        occ_map = np.squeeze(occ_map, axis=1)
 
     if occ_map.ndim != 3:
         raise ValueError(

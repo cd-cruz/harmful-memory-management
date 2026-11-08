@@ -65,9 +65,7 @@ def planning_single_inference(
 
     token, user_message, assitant_message = generate_messages(data_sample, verbose=False)
 
-    full_messages, response_message =  run_one_round_conversation(
-        full_messages = [], 
-        system_message=(system_message + "\n"
+    planner_prompt = (system_message + "\n"
         "Return ONLY six future (x,y) waypoints at 0.5s intervals "
         "from 0.5s to 3.0s, relative to the current ego position. "
         "Use this exact Python format: "
@@ -75,27 +73,93 @@ def planning_single_inference(
         "Replace x1,y1,etc. with numbers. "
         "No explanation, Markdown, or equations."
         if planner_model_id == "qwen3:14b"
-        else system_message),
-        user_message = user_message,
-        temperature = 0.0,
-        model_name = planner_model_id,
+        else system_message
     )
+
+    full_messages, response_message = run_one_round_conversation(
+        full_messages=[],
+        system_message=planner_prompt,
+        user_message=user_message,
+        temperature=0.0,
+        model_name=planner_model_id,
+    )
+
     result = response_message["content"]
+
+    try:
+        traj = result[result.index("["):result.index("]") + 1]
+        traj = ast.literal_eval(traj)
+
+    except (ValueError, SyntaxError):
+        # Original fallback: labelled (x, y) waypoints
+        lines = result.splitlines()
+        waypoints = []
+
+        for i, line in enumerate(
+            line for line in lines
+            if "Waypoint " in line and " : (" in line
+        ):
+            if f"Waypoint {i + 1} " not in line:
+                raise ValueError("Unexpected waypoint numbering")
+
+            coords = line.split(" : (", 1)[1].split(")", 1)[0]
+            x, y = coords.split(",")
+            waypoints.append((float(x), float(y)))
+
+        # Additional fallback: separate x and y values
+        # Additional fallback: separate x and y values
+        if not waypoints:
+            for i in range(1, 7):
+                heading = f"**Waypoint {i} ({i * 0.5:.1f}s):**"
+
+                if heading not in result:
+                    break
+
+                section = result.split(heading, 1)[1].split("\n\n", 1)[0]
+
+                x = section.split("**x:**", 1)[1].strip().split()[0]
+                y = section.split("**y:**", 1)[1].split("=", 1)[1].strip().split()[0]
+
+                waypoints.append((float(x), float(y)))
+
+        # Additional fallback: First, Second, Third... Waypoint
+        if not waypoints:
+            labels = ["First", "Second", "Third", "Fourth", "Fifth", "Sixth"]
+
+            for i, label in enumerate(labels, start=1):
+                prefix = f"{i}. **{label} Waypoint**:"
+                matches = [
+                    line for line in lines
+                    if line.strip().startswith(prefix)
+                ]
+
+                if len(matches) != 1 or "$(" not in matches[0]:
+                    break
+
+                coords = matches[0].split("$(", 1)[1].split(")", 1)[0]
+                x, y = coords.split(",")
+                waypoints.append((float(x), float(y)))
+
+        traj = waypoints
+
+    traj = np.asarray(traj, dtype=float)
+
+    if traj.shape != (6, 2) or not np.isfinite(traj).all():
+        raise ValueError(
+            f"Invalid trajectory for token {token}: shape {traj.shape}\n"
+            f"Full Qwen response: {repr(result)}"
+        )
 
     if verbose:
         print(token)
-        print(f"GPT  Planner:\n {result}")
-        print(f"Ground Truth:\n {assitant_message}")
-    
+        print(f"GPT Planner:\n{result}")
+        print(f"Ground Truth:\n{assitant_message}")
+
     output_dict = {
         "token": token,
         "Prediction": result,
-        "Ground Truth": assitant_message, 
+        "Ground Truth": assitant_message,
     }
-    
-    traj = result[result.find('[') : result.find(']')+1]
-    traj = ast.literal_eval(traj)
-    traj = np.array(traj)
 
     if self_reflection:
         assert data_dict is not None

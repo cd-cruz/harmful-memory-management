@@ -33,6 +33,19 @@ def run_one_round_conversation(
     response_message = response["choices"][0]["message"].to_dict_recursive()
     # response_message = response.choices[0].message
 
+    if not response_message.get("content"):
+        print("\n[QWEN DEBUG] Empty assistant response")
+        print(f"Finish reason: {response['choices'][0].get('finish_reason')}")
+        print(f"Token usage: {response.get('usage')}")
+        print(f"Message fields: {list(response_message.keys())}")
+
+        reasoning = (
+            response_message.get("reasoning")
+            or response_message.get("reasoning_content")
+            or ""
+        )
+        print(f"Reasoning length: {len(reasoning)}")
+
     # Append assistant's reply to conversation
     full_messages.append(response_message)
 
