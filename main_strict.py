@@ -17,7 +17,7 @@ from agentdriver.perception.perception_agent import PerceptionAgent
 from agentdriver.planning.planning_agent import PlanningAgent
 from agentdriver.reasoning.reasoning_agent import ReasoningAgent
 
-EXPERIMENT_NAME = "qwen3_14b_debug_remaining"
+EXPERIMENT_NAME = "qwen3_14b_debug_remaining_v2"
 RANDOM_SEED = 0
 N_SAMPLES = 2
 SUCCESS_L2_THRESHOLD = 2.5  # add when l2 < this. 0.0 = no add, 99999.0 = always add

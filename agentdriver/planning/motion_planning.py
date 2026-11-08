@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from tqdm import tqdm
 import os
+import re
 
 from agentdriver.planning.planning_prmopts import planning_system_message as system_message
 from agentdriver.llm_core.chat import run_one_round_conversation
@@ -66,12 +67,14 @@ def planning_single_inference(
     token, user_message, assitant_message = generate_messages(data_sample, verbose=False)
 
     planner_prompt = (system_message + "\n"
-        "Return ONLY six future (x,y) waypoints at 0.5s intervals "
-        "from 0.5s to 3.0s, relative to the current ego position. "
+        "Return ONLY six FUTURE (x,y) waypoints at these exact times: "
+        "0.5s, 1.0s, 1.5s, 2.0s, 2.5s, 3.0s. "
+        "Do NOT include the vehicle's current position at t=0s. "
+        "Coordinates must be relative to the current ego position. "
         "Use this exact Python format: "
         "[(x1,y1),(x2,y2),(x3,y3),(x4,y4),(x5,y5),(x6,y6)]. "
-        "Replace x1,y1,etc. with numbers. "
-        "No explanation, Markdown, or equations."
+        "Replace x1,y1,etc. with actual numerical coordinates. "
+        "Do not include explanations, Markdown, or equations."
         if planner_model_id == "qwen3:14b"
         else system_message
     )
@@ -139,6 +142,34 @@ def planning_single_inference(
                 coords = matches[0].split("$(", 1)[1].split(")", 1)[0]
                 x, y = coords.split(",")
                 waypoints.append((float(x), float(y)))
+
+        # Qwen3 compatibility: parse Markdown-formatted waypoints.
+        # Only accept the required future timestamps: 0.5s to 3.0s.
+        if not waypoints and planner_model_id == "qwen3:14b":
+            matches = re.findall(
+                r"\*\*At\s+(\d+(?:\.\d+)?)s:\*\*"
+                r".*?"
+                r"\*\*Waypoint:\*\*\s*\$?\s*"
+                r"\(\s*([-+]?\d*\.?\d+)\s*,\s*"
+                r"([-+]?\d*\.?\d+)\s*\)",
+                result,
+                flags=re.DOTALL,
+            )
+
+            expected_times = np.arange(0.5, 3.1, 0.5)
+
+            if (
+                len(matches) == 6
+                and np.allclose(
+                    [float(t) for t, _, _ in matches],
+                    expected_times,
+                    atol=1e-6,
+                )
+            ):
+                waypoints = [
+                    (float(x), float(y))
+                    for _, x, y in matches
+                ]
 
         traj = waypoints
 
