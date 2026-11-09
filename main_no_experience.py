@@ -292,3 +292,9 @@ print(f"Invalid tokens: {invalid_tokens}")
 print(
     f"Success count: {success_count}/{len(token_list)} ({success_count/len(token_list)*100:.2f}%)"
 )
+
+if invalid_tokens or len(records) != N_SAMPLES:
+    raise RuntimeError(
+        f"Incomplete experiment: {len(records)}/{N_SAMPLES} "
+        f"valid scenarios; invalid tokens: {invalid_tokens}"
+    )
