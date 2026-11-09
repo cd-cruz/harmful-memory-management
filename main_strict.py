@@ -17,9 +17,9 @@ from agentdriver.perception.perception_agent import PerceptionAgent
 from agentdriver.planning.planning_agent import PlanningAgent
 from agentdriver.reasoning.reasoning_agent import ReasoningAgent
 
-EXPERIMENT_NAME = "qwen3_14b_debug_remaining_v2"
+EXPERIMENT_NAME = "qwen3_14b_debug_v1"
 RANDOM_SEED = 0
-N_SAMPLES = 2
+N_SAMPLES = 1
 SUCCESS_L2_THRESHOLD = 2.5  # add when l2 < this. 0.0 = no add, 99999.0 = always add
 DELETION_L2_THRESHOLD = 99999.0  # del when history l2 > this. 99999.0 = no deletion    #2.5
 DELETION_RETREIVAL_N_TIMES = 99999  # del when ret time >= this. 99999 = no deletion      #3
@@ -117,10 +117,7 @@ with open(data_path / "split.json", "r") as f:
 
 #### NORMAL
 val_tokens = split_data["val"]
-token_list = [
-    "c7c62f68bd0a45e9877829a30e36a62b",
-    "9c9cdfaf964f4776b30f1edbdf9adb0b",
-]
+token_list = ["33a978e5b1224b81a9252bc4da7c1fd2"]
 assert "distribshift" not in EXPERIMENT_NAME
 
 #### DISTRIBUTION SHIFT

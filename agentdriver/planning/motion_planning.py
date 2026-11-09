@@ -52,6 +52,119 @@ def generate_messages(data_sample, use_peception=True, use_short_experience=True
     
     return token, user_message, assistant_message
 
+
+def parse_qwen_trajectory(result):
+    """Extract six future waypoints without changing their coordinates."""
+    number = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)"
+    pair = rf"\(\s*({number})\s*,\s*({number})\s*\)"
+    expected_times = np.arange(0.5, 3.1, 0.5)
+
+    def validate(coords, times=None):
+        traj = np.asarray(coords, dtype=float)
+
+        if traj.shape != (6, 2) or not np.isfinite(traj).all():
+            raise ValueError("Invalid Qwen trajectory coordinates")
+
+        if times is not None:
+            if len(times) != 6 or not np.allclose(
+                times, expected_times, atol=1e-6, rtol=0
+            ):
+                raise ValueError("Incorrect waypoint timestamps")
+
+        return traj
+
+    # Format A: Python list of six coordinate pairs
+    for match in re.finditer(r"\[[^\[\]]*\]", result, re.DOTALL):
+        try:
+            coords = ast.literal_eval(match.group())
+            return validate(coords)
+        except (ValueError, SyntaxError, TypeError):
+            continue
+
+    # Format B: Explicit timestamp and coordinate pair
+    timestamp_pair = re.findall(
+        rf"(?m)^\s*(?:-\s*)?\*\*(?:At\s+)?"
+        rf"({number})\s*(?:seconds|s)\s*:?\*\*:"
+        rf"\s*\n\s*\$?\s*(?:\(x,\s*y\)\s*=\s*)?"
+        rf"{pair}",
+        result,
+    )
+
+    if timestamp_pair:
+        return validate(
+            [(float(x), float(y)) for _, x, y in timestamp_pair],
+            [float(t) for t, _, _ in timestamp_pair],
+        )
+
+    # Format C: Numbered Markdown waypoint list
+    numbered = re.findall(
+        rf"(?m)^\s*([1-6])\.\s*\*\*{pair}\*\*",
+        result,
+    )
+
+    if numbered:
+        indices = [int(i) for i, _, _ in numbered]
+
+        if indices != list(range(1, 7)):
+            raise ValueError("Incorrect waypoint numbering")
+
+        # Numbered lists require explicit timing context.
+        has_full_times = all(
+            re.search(
+                rf"(?<![\d.]){t:.1f}\s*s(?:econds)?\b",
+                result,
+            )
+            for t in expected_times
+        )
+
+        has_interval = bool(
+            re.search(r"0\.5\s*s(?:econds)?\s+intervals?", result)
+            and re.search(
+                r"starting\s+at\s+0\.5\s*s", result
+            )
+        )
+
+        if not (has_full_times or has_interval):
+            raise ValueError("Ambiguous numbered waypoint timing")
+
+        return validate(
+            [(float(x), float(y)) for _, x, y in numbered]
+        )
+
+    # Format D: Timestamped separate x/y approximate values
+    separate_xy = re.findall(
+        rf"(?m)^\s*-\s*\*\*(?:At\s+)?"
+        rf"({number})\s*(?:seconds|s)\*\*:"
+        rf"[^\n]*\n[^\n]*?"
+        rf"x\s*\\approx\s*({number})"
+        rf"[^\n]*?"
+        rf"y\s*\\approx\s*({number})",
+        result,
+    )
+
+    if separate_xy:
+        return validate(
+            [(float(x), float(y)) for _, x, y in separate_xy],
+            [float(t) for t, _, _ in separate_xy],
+        )
+
+    # Previous Qwen format: At 0.5s / Waypoint
+    previous_format = re.findall(
+        rf"\*\*At\s+({number})s:\*\*"
+        rf".*?\*\*Waypoint:\*\*\s*\$?\s*{pair}",
+        result,
+        flags=re.DOTALL,
+    )
+
+    if previous_format:
+        return validate(
+            [(float(x), float(y)) for _, x, y in previous_format],
+            [float(t) for t, _, _ in previous_format],
+        )
+
+    raise ValueError("No recognised six-waypoint trajectory")
+
+
 def planning_single_inference(
         planner_model_id, 
         data_sample, 
@@ -87,94 +200,81 @@ def planning_single_inference(
         model_name=planner_model_id,
     )
 
+
     result = response_message["content"]
 
-    try:
-        traj = result[result.index("["):result.index("]") + 1]
-        traj = ast.literal_eval(traj)
+    if planner_model_id == "qwen3:14b":
+        try:
+         traj = parse_qwen_trajectory(result)
+        except ValueError:
+            print(f"\nInvalid Qwen trajectory for token: {token}")
+            print(f"Full Qwen response:\n{result}")
+            raise
 
-    except (ValueError, SyntaxError):
-        # Original fallback: labelled (x, y) waypoints
-        lines = result.splitlines()
-        waypoints = []
+    else:
+        # Original AgentDriver trajectory parser.
+        try:
+            traj = result[result.index("["):result.index("]") + 1]
+            traj = ast.literal_eval(traj)
 
-        for i, line in enumerate(
-            line for line in lines
-            if "Waypoint " in line and " : (" in line
-        ):
-            if f"Waypoint {i + 1} " not in line:
-                raise ValueError("Unexpected waypoint numbering")
+        except (ValueError, SyntaxError):
+            # Original fallback: labelled (x, y) waypoints
+            lines = result.splitlines()
+            waypoints = []
 
-            coords = line.split(" : (", 1)[1].split(")", 1)[0]
-            x, y = coords.split(",")
-            waypoints.append((float(x), float(y)))
+            for i, line in enumerate(
+                line for line in lines
+                if "Waypoint " in line and " : (" in line
+            ):
+                if f"Waypoint {i + 1} " not in line:
+                    raise ValueError("Unexpected waypoint numbering")
 
-        # Additional fallback: separate x and y values
-        # Additional fallback: separate x and y values
-        if not waypoints:
-            for i in range(1, 7):
-                heading = f"**Waypoint {i} ({i * 0.5:.1f}s):**"
-
-                if heading not in result:
-                    break
-
-                section = result.split(heading, 1)[1].split("\n\n", 1)[0]
-
-                x = section.split("**x:**", 1)[1].strip().split()[0]
-                y = section.split("**y:**", 1)[1].split("=", 1)[1].strip().split()[0]
-
-                waypoints.append((float(x), float(y)))
-
-        # Additional fallback: First, Second, Third... Waypoint
-        if not waypoints:
-            labels = ["First", "Second", "Third", "Fourth", "Fifth", "Sixth"]
-
-            for i, label in enumerate(labels, start=1):
-                prefix = f"{i}. **{label} Waypoint**:"
-                matches = [
-                    line for line in lines
-                    if line.strip().startswith(prefix)
-                ]
-
-                if len(matches) != 1 or "$(" not in matches[0]:
-                    break
-
-                coords = matches[0].split("$(", 1)[1].split(")", 1)[0]
+                coords = line.split(" : (", 1)[1].split(")", 1)[0]
                 x, y = coords.split(",")
                 waypoints.append((float(x), float(y)))
 
-        # Qwen3 compatibility: parse Markdown-formatted waypoints.
-        # Only accept the required future timestamps: 0.5s to 3.0s.
-        if not waypoints and planner_model_id == "qwen3:14b":
-            matches = re.findall(
-                r"\*\*At\s+(\d+(?:\.\d+)?)s:\*\*"
-                r".*?"
-                r"\*\*Waypoint:\*\*\s*\$?\s*"
-                r"\(\s*([-+]?\d*\.?\d+)\s*,\s*"
-                r"([-+]?\d*\.?\d+)\s*\)",
-                result,
-                flags=re.DOTALL,
-            )
+            # Additional fallback: separate x and y values
+            if not waypoints:
+                for i in range(1, 7):
+                    heading = f"**Waypoint {i} ({i * 0.5:.1f}s):**"
 
-            expected_times = np.arange(0.5, 3.1, 0.5)
+                    if heading not in result:
+                        break
 
-            if (
-                len(matches) == 6
-                and np.allclose(
-                    [float(t) for t, _, _ in matches],
-                    expected_times,
-                    atol=1e-6,
-                )
-            ):
-                waypoints = [
-                    (float(x), float(y))
-                    for _, x, y in matches
+                    section = result.split(heading, 1)[1].split("\n\n", 1)[0]
+
+                    x = section.split("**x:**", 1)[1].strip().split()[0]
+                    y = section.split("**y:**", 1)[1].split("=", 1)[1].strip().split()[0]
+
+                    waypoints.append((float(x), float(y)))
+
+            # Additional fallback: First, Second, Third... Waypoint
+            if not waypoints:
+                labels = [
+                    "First", "Second", "Third",
+                    "Fourth", "Fifth", "Sixth"
                 ]
 
-        traj = waypoints
+                for i, label in enumerate(labels, start=1):
+                    prefix = f"{i}. **{label} Waypoint**:"
+                    matches = [
+                        line for line in lines
+                        if line.strip().startswith(prefix)
+                    ]
 
+                    if len(matches) != 1 or "$(" not in matches[0]:
+                        break
+
+                    coords = matches[0].split("$(", 1)[1].split(")", 1)[0]
+                    x, y = coords.split(",")
+                    waypoints.append((float(x), float(y)))
+
+            traj = waypoints
+
+    # Convert the trajectory to a NumPy array.
     traj = np.asarray(traj, dtype=float)
 
+    # Validate trajectory shape and coordinates.
     if traj.shape != (6, 2) or not np.isfinite(traj).all():
         raise ValueError(
             f"Invalid trajectory for token {token}: shape {traj.shape}\n"
