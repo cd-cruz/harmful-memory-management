@@ -21,6 +21,7 @@ class ReasoningAgent:
             print(reasoning)
         return reasoning
 
+    # Change timeout to accomodate local LLM execution
     @timeout(120)
     def generate_chain_of_thoughts_reasoning(self, env_info_prompts):
         """Generating chain_of_thoughts reasoning by GPT in-context learning"""

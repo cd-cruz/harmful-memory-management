@@ -32,6 +32,7 @@ class PlanningAgent:
         planning_target = self.generate_planning_target(data_dict)
         return planning_target
     
+    # Increase timeout
     @timeout(180)
     def run(self, data_dict, data_sample):
         """Generate motion planning results for a single scene"""

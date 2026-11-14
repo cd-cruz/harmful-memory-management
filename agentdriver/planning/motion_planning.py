@@ -13,7 +13,7 @@ from agentdriver.llm_core.chat import run_one_round_conversation
 from agentdriver.reasoning.collision_check import collision_check
 from agentdriver.reasoning.collision_optimization import collision_optimization
 from agentdriver.llm_core.api_keys import OPENAI_ORG, OPENAI_API_KEY
-from agentdriver.planning.qwen_compatibility import get_planner_prompt, parse_qwen_trajectory
+from agentdriver.planning.qwen_compatibility import getplanner_prompt, parse_qwen_trajectory
 
 openai.organization = OPENAI_ORG
 openai.api_key = OPENAI_API_KEY
@@ -66,9 +66,9 @@ def planning_single_inference(
 
     token, user_message, assitant_message = generate_messages(data_sample, verbose=False)
 
-    full_messages, response_message = run_one_round_conversation(
-        full_messages = [],
-        system_message = get_planner_prompt(system_message, planner_model_id),
+    full_messages, response_message =  run_one_round_conversation(
+        full_messages = [], 
+        system_message = get_planner_prompt(system_message, planner_model_id), 
         user_message = user_message,
         temperature = 0.0,
         model_name = planner_model_id,

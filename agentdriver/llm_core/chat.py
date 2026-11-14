@@ -6,13 +6,14 @@ from typing import List, Dict
 from agentdriver.llm_core.chat_utils import completion_with_backoff
 from agentdriver.llm_core.timeout import timeout
 
+# Change timeout to take account local LLM
 @timeout(120)
 def run_one_round_conversation(
         full_messages: List[Dict],
         system_message: str,
         user_message: str,
         temperature: float = 0.0,
-        model_name: str = "qwen3:14b"
+        model_name: str = "qwen3:14b" # change LLM model from gpt-3.5-turbo-16k-0613 to Qwen3
     ):
     """
     Perform one round of conversation using OpenAI API
@@ -38,14 +39,13 @@ def run_one_round_conversation(
         print(f"Finish reason: {response['choices'][0].get('finish_reason')}")
         print(f"Token usage: {response.get('usage')}")
         print(f"Message fields: {list(response_message.keys())}")
-
-        reasoning = (
-            response_message.get("reasoning")
-            or response_message.get("reasoning_content")
-            or ""
-        )
+        
+        reasoning = (response_message.get("reasoning")
+                     or response_message.get("reasoning_content")
+                     or ""
+                     )
         print(f"Reasoning length: {len(reasoning)}")
-
+    
     # Append assistant's reply to conversation
     full_messages.append(response_message)
 
@@ -59,6 +59,7 @@ def run_one_round_conversation_with_functional_call(
         temperature: float = 0.0,
         model_name: str = "qwen3:14b"
     ):
+    
     """
     Perform one round of conversation with functional call using OpenAI API
     """
@@ -73,8 +74,9 @@ def run_one_round_conversation_with_functional_call(
         model=model_name,
         messages=full_messages,
         temperature=temperature,
-        tools=[{"type": "function", "function": info} for info in functional_calls_info],
-        tool_choice="auto",
+        # Changing functions to tools to make it compatible with Qwen
+        tools = [{"type": "function", "function": info} for info in functional_calls_info],
+        tool_choice = "auto"
     )
 
     response_message = response["choices"][0]["message"].to_dict_recursive()

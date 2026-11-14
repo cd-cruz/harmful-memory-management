@@ -38,16 +38,15 @@ get_occupancy_at_locations_for_timestep_info = {
 }
 
 def get_occupancy_at_locations_for_timestep(locations, timestep, data_dict):
+    # Change for Qwen Compatibility
     occ_map = np.asanyarray(data_dict["occupancy"])
-
+    
     if occ_map.ndim == 4 and occ_map.shape[1] == 1:
         occ_map = np.squeeze(occ_map, axis=1)
-
+    
     if occ_map.ndim != 3:
-        raise ValueError(
-            f"Invalid occupancy shape: "
-            f"expected a 3D array, received {occ_map.shape}"
-        )
+        raise ValueError(f"Invalid Occupancy shape: "
+                         f"Expected a 3D array, recieved {occ_map.shape}")
     
     occ_map = occ_map.transpose(0, 2, 1)
     occ_list = []
@@ -97,20 +96,19 @@ check_occupancy_for_planned_trajectory_info = {
 }
 
 def check_occupancy_for_planned_trajectory(trajectory, data_dict):
+    # Change for Qwen Compatibility
     occ_map = np.asanyarray(data_dict["occupancy"])
-
+    
     if occ_map.ndim == 4 and occ_map.shape[1] == 1:
         occ_map = np.squeeze(occ_map, axis=1)
-
+        
     if occ_map.ndim != 3:
-        raise ValueError(
-            f"Invalid occupancy shape: "
-            f"expected a 3D array, received {occ_map.shape}"
-        )
-    
+        raise ValueError(f"Invalid Occupancy Shape: "
+                         f"Expected a 3D array, recieved {occ_map.shape}")
+
     occ_map = occ_map.transpose(0, 2, 1)
     prompts = "Check collision of the planned trajectory:\n"
-
+    
     collision = False
     for timestep, location in enumerate(trajectory):
         x, y = location 
@@ -132,16 +130,15 @@ def check_occupancy_for_planned_trajectory(trajectory, data_dict):
     return prompts, collision
 
 def check_occupancy_for_planned_trajectory_and_surrounding(trajectory, data_dict):
+    # Change for Qwen Compatibility
     occ_map = np.asanyarray(data_dict["occupancy"])
-
+    
     if occ_map.ndim == 4 and occ_map.shape[1] == 1:
-        occ_map = np.squeeze(occ_map, axis=1)
-
+        occ_map = np.squeeze(occ_map, axis = 1)
+        
     if occ_map.ndim != 3:
-        raise ValueError(
-            f"Invalid occupancy shape: "
-            f"expected a 3D array, received {occ_map.shape}"
-        )
+        raise ValueError(f"Invalid occupancy shape: "
+                         f"expected a 3D array, received {occ_map.shape}")
     
     occ_map = occ_map.transpose(0, 2, 1)
     prompts = "Check collision of the planned trajectory:\n"
@@ -220,20 +217,18 @@ def check_occupancy_for_planned_trajectory_correct(trajectory, data_dict, safe_m
     segmentation: torch.Tensor (B, n_future, 200, 200)
     '''
     occ_map = np.asanyarray(data_dict["occupancy"])
-
+    
     # Handle occupancy arrays with an extra singleton dimension
     if occ_map.ndim == 4 and occ_map.shape[1] == 1:
-        occ_map = np.squeeze(occ_map, axis=1)
-
+        occ_map = np.squeeze(occ_map, axis = 1)
+        
     if occ_map.ndim != 3:
-        raise ValueError(
-            f"Invalid occupancy shape for token {token}: "
-            f"expected a 3D array, received {occ_map.shape}"
-        )
-
+        raise ValueError(f"Invalid occupancy shape for token {token}: "
+                         f"expected a 3D array, received {occ_map.shape}")
 
     occ_map = np.fliplr(occ_map.transpose(1,2,0)).transpose(2,0,1)
     occ_map = occ_map[1:] # remove the current timestep
+    
     if occ_map.shape[0] == 4: # if we only have 4 future occupancy
         # New shape
         new_shape = (6, 200, 200)

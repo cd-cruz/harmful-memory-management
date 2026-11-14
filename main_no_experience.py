@@ -11,6 +11,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from agentdriver.llm_core.api_keys import FINETUNE_PLANNER_NAME
+
 from agentdriver.main.language_agent import LanguageAgent
 from agentdriver.memory.memory_agent import MemoryAgent
 from agentdriver.perception.perception_agent import PerceptionAgent
@@ -28,8 +29,7 @@ EXIST_TIME_THRESHOLD = 99999  # clean up when exist time > this. 99999 = no clea
 MIN_MEMORY_SIZE = 1  # won't delete when < this
 MAX_MEMORY_SIZE = 99999  # force delete (ignore l2 threshold) mem when > this (but will still add)
 ADD_GT = False  # WE NEVER USED THIS OPTION. TO RUN ERROR-FREE EXPERIMENT, USE `./main_noerrorprop.py`.
-USE_EXPERIENCE_MEMORY = False  # Keep the baseline strictly memory-free.
-
+USE_EXPERIENCE_MEMORY = False
 
 random.seed(RANDOM_SEED)
 
@@ -158,7 +158,6 @@ memory_agent = MemoryAgent(
     verbose=language_agent.verbose,
 )
 assert memory_agent.experience_memory.get_n_remaining_memory() == 180
-# Database is loaded by MemoryAgent but never retrieved or modified in this run.
 
 print("Initializing ReasoningAgent...")
 reasoning_agent = ReasoningAgent(
@@ -182,7 +181,6 @@ for token in tqdm(token_list, desc="Processing tokens"):
     assert token in language_agent.tokens
     time_step += 1
 
-
     try:
         # Create PerceptionAgent
         perception_agent = PerceptionAgent(
@@ -192,15 +190,15 @@ for token in tqdm(token_list, desc="Processing tokens"):
             model_name=language_agent.model_name,
             verbose=language_agent.verbose,
         )
-        
         # Perception
         ego_prompts, perception_prompts, working_memory = perception_agent.run()
-        
-        # Retrieve common-sense information only; never retrieve experience memory.
+        # Memory
+        # Commented to not use experience
+        # commonsense_mem, experience_mem = memory_agent.run(working_memory)
         commonsense_mem = memory_agent.retrieve_common_sense_memory()
         experience_mem = ""
         assert not USE_EXPERIENCE_MEMORY
-
+        
         # Reasoning
         reasoning = reasoning_agent.run(
             data_dict=perception_agent.data_dict,
@@ -208,7 +206,6 @@ for token in tqdm(token_list, desc="Processing tokens"):
             working_memory=working_memory,
             use_cot_rules=language_agent.finetune_cot,
         )
-        
         # Planning
         planning_target = planning_agent.generate_planning_target(
             perception_agent.data_dict
@@ -223,7 +220,6 @@ for token in tqdm(token_list, desc="Processing tokens"):
             "reasoning": reasoning,
             "planning_target": planning_target,
         }
-        assert data_sample["experiences"] == "", "Experience prompt must be empty"
         planning_traj, planning_info = planning_agent.run(
             data_dict=perception_agent.data_dict,
             data_sample=data_sample,
@@ -236,17 +232,8 @@ for token in tqdm(token_list, desc="Processing tokens"):
         # Compute L2 error
         # l2_error = np.linalg.norm(ground_truth - planning_traj, ord=2)
         l2_error = eval_l2(planning_traj, ground_truth, metric="uniad")
-        print(f"Pred vs. GT  L2: {l2_error}")
-
-        # Baseline outcome, with no experience retrieval, addition, or deletion.
-        is_success = l2_error < SUCCESS_L2_THRESHOLD
-        if is_success:
-            print(f"Token {token} succeeded")
-            success_count += 1
-        else:
-            print(f"Token {token} failed")
-
-        # These fields are intentionally absent in a memory-free experiment.
+        # Record this retrieve. No matter if succeeded or not
+        # Change to None to disable memory
         memory_token = None
         memory_traj = None
         pred_mem_l2_error = None
@@ -254,7 +241,16 @@ for token in tqdm(token_list, desc="Processing tokens"):
         input_similarity = None
         output_similarity_cos = None
         output_similarity_exp = None
-
+        
+        
+        is_success = l2_error < SUCCESS_L2_THRESHOLD
+        if is_success:
+            print(F"Token {token} succeeded")
+            success_count += 1
+        else:
+            print(f"Token {token} failed")
+            
+    
         # Save the results to a pickle file
         with open(f"./results/{EXPERIMENT_NAME}/prediction_results.pkl", "wb") as f:
             pickle.dump(results, f)
@@ -275,12 +271,10 @@ for token in tqdm(token_list, desc="Processing tokens"):
                 "output_similarity_exp": output_similarity_exp,
             }
         )
-
-        with open(f"./results/{EXPERIMENT_NAME}/records.pkl", "wb") as f:
-            pickle.dump(records, f)
-        # Keep a per-scenario record of the memory-free condition.
-        # No experience-memory statistics or memory database are updated.
-
+        
+        with open(f"./results/{EXPERIMENT_NAME}/records.pkl", "wb" as f):
+            pickle.dump(records , f)
+            
     except Exception as e:
         print(f"An error occurred for token {token}:")
         print(f"{type(e).__name__}: {e}")
@@ -293,6 +287,7 @@ print(
     f"Success count: {success_count}/{len(token_list)} ({success_count/len(token_list)*100:.2f}%)"
 )
 
+# Debugging
 if invalid_tokens or len(records) != N_SAMPLES:
     raise RuntimeError(
         f"Incomplete experiment: {len(records)}/{N_SAMPLES} "

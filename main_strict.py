@@ -11,6 +11,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from agentdriver.llm_core.api_keys import FINETUNE_PLANNER_NAME
+
 from agentdriver.main.language_agent import LanguageAgent
 from agentdriver.memory.memory_agent import MemoryAgent
 from agentdriver.perception.perception_agent import PerceptionAgent
@@ -408,6 +409,7 @@ print(
     f"Success count: {success_count}/{len(token_list)} ({success_count/len(token_list)*100:.2f}%)"
 )
 
+# Debugging
 if invalid_tokens or len(records) != N_SAMPLES:
     raise RuntimeError(
         f"Incomplete experiment: {len(records)}/{N_SAMPLES} "

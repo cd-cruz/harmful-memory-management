@@ -31,12 +31,16 @@ class PerceptionAgent:
 
     def functional_call(self, response_message):
         # Call the function from GPT response
+        # Changing functions to tools to make it compatible with Qwen
         tool_calls = response_message["tool_calls"]
         tool_call = tool_calls[0]
-        response_message["tool_calls"] = [tool_call]  
+        
+        response_message["tool_calls"] = [tool_call]
+        
         function_name = tool_call["function"]["name"]
         function_args = json.loads(tool_call["function"]["arguments"])
         function_to_call = getattr(self.func_agent, function_name)
+        
         if not callable(function_to_call):
             print(f"Function {function_name} is not callable!")
             return None
