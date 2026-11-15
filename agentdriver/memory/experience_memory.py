@@ -61,6 +61,8 @@ class ExperienceMemory:
         # self.deletion_retrieval_n_times = 3
         # memory token -> list of end-to-end L2 of each retrieval
         self.success_stats = {}
+        # Track rejected memories (not deleted)
+        self.rejected_tokens = set()
         # query token -> memory token. 1-to-1 mapping, won't delete memory
         self.retrieval_records = {}
         # memory token -> query token. 1-to-many mapping, won't delete memory
@@ -168,6 +170,15 @@ class ExperienceMemory:
             return 0.0
         return np.dot(traj1, traj2) / (norm1 * norm2)
 
+    def reject_memory(self, memory_token):
+        """Prevent a harmful memory from being retrieved again."""
+        if memory_token not in self.tokens:
+            return False
+
+        self.rejected_tokens.add(memory_token)
+        print(f"Rejected: Memory {memory_token}")
+        return True
+
     def compute_similarity(self, queries, token):
         """Compute the similarity between the current experience and the past experiences in the memory."""
         diffs = []
@@ -178,13 +189,24 @@ class ExperienceMemory:
 
         confidence = np.exp(-diffs)
 
+        # Exclude the current scenario
         if token in self.tokens:
             self_index = self.tokens.index(token)
             confidence[self_index] = 0.0
 
-        sorted_indices = np.argsort(-confidence, kind="mergesort")
+        # Exclude rejected memories
+        eligible_indices = [
+            i for i, memory_token in enumerate(self.tokens)
+            if memory_token not in self.rejected_tokens and memory_token != token
+        ]
 
-        top_k_indices = sorted_indices[: self.k]
+        if not eligible_indices:
+            return np.array([], dtype=int), np.array([])
+
+        # Sort only eligible meories by similarity
+        sorted_indices = sorted(eligible_indices, key=lambda i: -confidence[i])
+
+        top_k_indices = np.array(sorted_indices[:self.k], dtype=int)
 
         return top_k_indices, confidence[top_k_indices]
 
@@ -228,14 +250,22 @@ class ExperienceMemory:
         return retrieved_mem_prompt
 
     def retrieve(self, working_memory):
-        r"""Retrieve the most similar past driving experiences with current working memory as input."""
+        """Retrieve the most similar past driving experiences with current working memory as input."""
 
         retrieved_tokens, retrieved_scenes, confidence = self.vector_retrieve(
             working_memory
         )
-        # this gpt retrieval is skipped by k=1 and directly return the prompt
+       
+        # No eligible meory eligible
+        if not retrieved_tokens:
+            print("Retrieve: No eligible memory available")
+            return ""
+
         retrieved_mem_prompt = self.gpt_retrieve(
-            working_memory, retrieved_tokens, retrieved_scenes, confidence
+            working_memory,
+            retrieved_tokens,
+            retrieved_scenes,
+            confidence
         )
 
         return retrieved_mem_prompt
@@ -243,6 +273,8 @@ class ExperienceMemory:
     def retrieve_a_specific_memory(self, working_memory, query_token):
         """Retrieve a specific memory given the query token."""
         assert query_token in self.tokens, f"query_token {query_token} not in memory"
+        if query_token in self.rejected_tokens:
+            raise ValueError(f"Memory {query_token} has been rejected")
         # fake vector retrieve
         retrieved_tokens = [query_token]
         retrieved_scenes = [self.values[self.tokens.index(query_token)]]
@@ -390,6 +422,8 @@ class ExperienceMemory:
         )
         # Must delete success_stats, otherwise find_worst_memory will still find it
         del self.success_stats[token]
+        # Remove rejected token if it has been permanently deleted
+        self.rejected_tokens.discard(token)
         # del self.memory_prompts[token]
         self.update_exit_time(token, time)
 

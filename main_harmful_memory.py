@@ -18,13 +18,14 @@ from agentdriver.perception.perception_agent import PerceptionAgent
 from agentdriver.planning.planning_agent import PlanningAgent
 from agentdriver.reasoning.reasoning_agent import ReasoningAgent
 
-from harmful_memory_manager.py import get_l2_error, get_pred_traj, memory_classifier
+from agentdriver.harmful_memory import harmful_memory_manager as harmful_manager
+from agentdriver.harmful_memory.baseline_result_loader import memory_off_results
 
 
 
-EXPERIMENT_NAME = "qwen3_14b_200_harmful_memory"
+EXPERIMENT_NAME = "qwen3_14b_200_harmful_memory_test_20"
 RANDOM_SEED = 0
-N_SAMPLES = 200
+N_SAMPLES = 20
 SUCCESS_L2_THRESHOLD = 2.5  # add when l2 < this. 0.0 = no add, 99999.0 = always add
 DELETION_L2_THRESHOLD = 99999.0  # del when history l2 > this. 99999.0 = no deletion    #2.5
 DELETION_RETREIVAL_N_TIMES = 99999  # del when ret time >= this. 99999 = no deletion      #3
@@ -125,6 +126,22 @@ val_tokens = split_data["val"]
 token_list = random.sample(val_tokens, N_SAMPLES)
 assert "distribshift" not in EXPERIMENT_NAME
 
+# Verify scenario tokens match the memory free baseline
+matching_tokens = sum(token in memory_off_results for token in token_list)
+
+print(f"Matching baseline tokens: {matching_tokens}/{len(token_list)}")
+
+missing_token = [
+    token for token in token_list
+    if token not in memory_off_results
+]
+
+if missing_token:
+    raise RuntimeError(
+        f"Can't do paired comparison: {len(missing_token)} "
+        f"scenario tokens are not found in memory off baseline: {missing_token}"
+    )
+
 #### DISTRIBUTION SHIFT
 # val_tokens = split_data["distribshift"]
 # token_list = val_tokens
@@ -179,6 +196,8 @@ invalid_tokens = []
 success_count = 0
 records = []
 time_step = 0
+
+
 for token in tqdm(token_list, desc="Processing tokens"):
     sys.stdout.flush()
     # Make sure the token is in the language_agent tokens
@@ -231,17 +250,51 @@ for token in tqdm(token_list, desc="Processing tokens"):
 
         ##### Evaluation
         ground_truth = gt_data[token][0]
+
         # Compute L2 error
         # l2_error = np.linalg.norm(ground_truth - planning_traj, ord=2)
         l2_error = eval_l2(planning_traj, ground_truth, metric="uniad")
+
+        # Check if the current token alreadt exist
+        token_status = harmful_manager.token_look_up(memory_off_results, token)
+
+        memory_classification = None
+        delta_l2_error = None
+        memory_off_l2_error = None
+        memory_rejected = False
+        should_delete_memory = False
+        memory_deleted = False
+
+        if token_status == True:
+            # Retrieve memory off l2 error
+            memory_off_l2_error = harmful_manager.get_l2_error(memory_off_results, token)
+            
+            # Validates the l2 error
+            mem_l2_status = harmful_manager.validate_l2_error(l2_error)
+            mem_off_l2_status = harmful_manager.validate_l2_error(memory_off_l2_error)
+
+            if mem_l2_status == True and mem_off_l2_status == True:
+                # Calculates the delta l2 error
+                delta_l2_error = harmful_manager.calculate_delta_l2_error(l2_error, memory_off_l2_error)
+
+                # Classify the memory
+                memory_classification = harmful_manager.memory_classifier(delta_l2_error)
+
         # Record this retrieve. No matter if succeeded or not
-        memory_token = memory_agent.experience_memory.get_retrieved_memory(token)
-        memory_traj = memory_agent.experience_memory.lookup_memory_fut_traj(
-            memory_token
-        )
-        memory_agent.experience_memory.record_l2(memory_token, l2_error, time_step)
-        pred_mem_l2_error = eval_l2(planning_traj, memory_traj, metric="uniad")
-        mem_gt_l2_error = eval_l2(memory_traj, ground_truth, metric="uniad")
+        memory_token = memory_agent.experience_memory.retrieval_records.get(token)
+        
+        memory_traj = None
+        pred_mem_l2_error = None
+        mem_gt_l2_error = None
+
+        if memory_token is None:
+            memory_classification = None
+
+        if memory_token is not None:
+            memory_traj = memory_agent.experience_memory.lookup_memory_fut_traj(memory_token)
+            memory_agent.experience_memory.record_l2(memory_token, l2_error, time_step)
+            pred_mem_l2_error = eval_l2(planning_traj, memory_traj, metric="uniad")
+            mem_gt_l2_error = eval_l2(memory_traj, ground_truth, metric="uniad")
 
         print(f"Pred vs. GT  L2: {l2_error}")
         print(f"Pred vs. mem L2: {pred_mem_l2_error}")
@@ -273,21 +326,64 @@ for token in tqdm(token_list, desc="Processing tokens"):
             pickle.dump(results, f)
 
         # Record the results
-        input_similarity = (
-            memory_agent.experience_memory.get_input_exp_similarity_of_query(
-                token, data_dict=working_memory["ego_data"]
+        input_similarity = None
+        output_similarity_cos = None
+        output_similarity_exp = None
+
+        if memory_token is not None:
+            input_similarity = (
+                memory_agent.experience_memory.get_input_exp_similarity_of_query(
+                    token, data_dict=working_memory["ego_data"]
+                )
             )
-        )
-        output_similarity_cos = (
-            memory_agent.experience_memory.get_output_cosine_similarity_of_query(
-                token, planning_traj
+        
+            output_similarity_cos = (
+                memory_agent.experience_memory.get_output_cosine_similarity_of_query(
+                    token, planning_traj
+                )   
             )
-        )
-        output_similarity_exp = (
-            memory_agent.experience_memory.get_output_exp_similarity_of_query(
-                token, planning_traj
+        
+            output_similarity_exp = (
+                memory_agent.experience_memory.get_output_exp_similarity_of_query(
+                    token, planning_traj
+                )
             )
-        )
+
+        # Harmful memory mitigation
+        if memory_classification is not None and memory_token is not None:
+            harmful_manager.record_memory(
+                memory_token,
+                l2_error,
+                memory_off_l2_error,
+                delta_l2_error,
+                memory_classification
+            )
+
+            if memory_classification == "reject":
+                memory_rejected = memory_agent.experience_memory.reject_memory(memory_token)
+                
+                if memory_rejected:
+                    print(f"Memory {memory_token} marked for rejection")
+
+            should_delete_memory = harmful_manager.memory_deletion_review(harmful_manager.record_memory_result, memory_token)
+
+            if should_delete_memory:
+                print(f"Memory {memory_token} marked for deletion")
+
+        
+        if should_delete_memory:
+            current_memory_size = memory_agent.experience_memory.get_n_remaining_memory()
+
+            if current_memory_size > MIN_MEMORY_SIZE:
+                memory_agent.experience_memory.delete_memory(memory_token, time=time_step)
+                new_memory_size = memory_agent.experience_memory.get_n_remaining_memory()
+
+                if new_memory_size == current_memory_size -1:
+                    memory_deleted = True
+                    print(f"Deleted harmful memory: {memory_token}")
+                else:
+                    raise RuntimeError(f"Memory deleteion not confirm: {memory_token}")
+
 
         ####### Clean up dead memory
         current_memory_size = memory_agent.experience_memory.get_n_remaining_memory()
@@ -363,9 +459,18 @@ for token in tqdm(token_list, desc="Processing tokens"):
                 "gt_traj": ground_truth,
                 "memory_token": memory_token,
                 "memory_traj": memory_traj,
+                "memory_retrieved": memory_token is not None,
                 "input_similarity": input_similarity,
                 "output_similarity_cos": output_similarity_cos,
                 "output_similarity_exp": output_similarity_exp,
+
+                # Harmful memory manager results
+                "memory_off_l2_error": memory_off_l2_error,
+                "delta_l2_error": delta_l2_error,
+                "memory_classification": memory_classification,
+                "memory_rejected": memory_rejected,
+                "should_delete_memory": should_delete_memory,
+                "memory_deleted": memory_deleted,
             }
         )
 
@@ -374,6 +479,10 @@ for token in tqdm(token_list, desc="Processing tokens"):
         retrieval_records, retrieval_records_reverse = (
             memory_agent.experience_memory.get_retrieval_records()
         )
+        with open(f"./results/{EXPERIMENT_NAME}/harmful_memory_records.pkl", "wb") as f:
+            pickle.dump(harmful_manager.record_memory_result, f)
+        with open(f"./results/{EXPERIMENT_NAME}/rejected_tokens.pkl", "wb") as f:
+            pickle.dump(memory_agent.experience_memory.rejected_tokens, f)
         with open(f"./results/{EXPERIMENT_NAME}/retrieval_records.pkl", "wb") as f:
             pickle.dump(retrieval_records, f)
         with open(
@@ -405,7 +514,7 @@ for token in tqdm(token_list, desc="Processing tokens"):
         print(f"An error occurred for token {token}:")
         print(f"{type(e).__name__}: {e}")
         invalid_tokens.append(token)
-        # raise e       # TO DEBUG, UNCOMMENT THIS
+        # raise       # TO DEBUG, UNCOMMENT THIS
         continue
 
 print(f"Invalid tokens: {invalid_tokens}")

@@ -13,7 +13,7 @@ from agentdriver.llm_core.chat import run_one_round_conversation
 from agentdriver.reasoning.collision_check import collision_check
 from agentdriver.reasoning.collision_optimization import collision_optimization
 from agentdriver.llm_core.api_keys import OPENAI_ORG, OPENAI_API_KEY
-from agentdriver.planning.qwen_compatibility import getplanner_prompt, parse_qwen_trajectory
+from agentdriver.planning.qwen_compatibility import get_planner_prompt, parse_qwen_trajectory
 
 openai.organization = OPENAI_ORG
 openai.api_key = OPENAI_API_KEY

@@ -11,7 +11,7 @@ def completion_with_backoff(**kwargs):
     # Replace with Ollama adn Qwen3 to run locally
     openai.api_base = "http://localhost:11434/v1"
     openai.api_key = "ollama"
-    return openai.Chat.completions.create(**kwargs)
+    return openai.ChatCompletion.create(**kwargs)
 
     # Together API
     # client = together.Together(api_key=together.api_key)
