@@ -1,53 +1,56 @@
-# Agent Memory Management
+# Agent Memory Management and Harmful Memory Management
 
-This repository contains the source code (for experiments related to [AgentDriver](https://github.com/USC-GVL/Agent-Driver) only) used in our paper **How Memory Management Impacts LLM Agents: An Empirical Study of Experience-Following Behavior**.
+This repository contains the integrated source code based on the following research papers: 
+- **How Memory Management Impacts LLM Agents: An Empirical Study of Experience-Following Behavior**
+- **A Language Agent for Autonomous Driving**.
 
-## Usage
+This project extends the original Agent-Driver memory management system to detect and mitigate harmful memory use in autonomous driving agents. It uses the Qwen3:14B LLM instead of GPT-3.5 Turbo and can run locally.
 
-AgentDriver code does not come together in this repository. Instead, we provide only the necessary files to patch the original AgentDriver code for simplicity.
+Original GitHub Repositories:
+Agent-Driver: https://github.com/physical-superintelligence-lab/Agent-Driver
+Agent-Driver Memory Management: https://github.com/yuplin2333/agent_memory_manage/tree/main
+
+The dataset is available through the original Agent-Driver GItHub repository. It uses pre-cached data from the nuScenes dataset and is stored on Google Drive.
+
+The Agent-Driver and the memory management are already integrated into this repository.
 
 Steps:
+1. Clone this repository
 
-1. Clone this repository, then `cd` into it.
-2. Clone the original AgentDriver code. This step can be done at any location on your machine:
+2. pip install -r requirements.txt
 
-```bash
-git clone https://github.com/USC-GVL/Agent-Driver.git
-```
+3. Install the datasets and move the files, "finetune", "memory", "metrics", "train", and "val" into the "data" folder
 
-3. Move `agentdriver`, `assets`, `data`, `experiments`, `scripts` folders, and `requirements.txt` from inside the original Agent-Driver project to this project, **but not the `Agent-Driver` folder itself**. You should be able to see `agentdriver`, `assets`, `data`, `experiments`, `scripts` folders beside `agentdriver_patch`, `scripts_patch` and `data_patch` folders in this project now.
+4. Install Ollama: https://ollama.com/download
 
-4. Follow the *Installation* and *Data Preparation* guide on https://github.com/USC-GVL/Agent-Driver, and get all the data prepared.
-5. **Patch the original code with our code**: Move everything inside `agentdriver_patch` folder to `agentdriver` folder. Move everything inside `scripts_patch` folder to `scripts` folder. Move everything inside `data_patch` folder to `data` folder. Overwrite all existing files. Now you can safely delete `agentdriver_patch`, `scripts_patch` and `data_patch` folder.
+5. Install Qwen3:14B: https://ollama.com/library/qwen3:14b
 
-> The filename typo `planning_prmopts` is deliberate to ensure capability with the original code. DO NOT FIX IT.
+6. In Powershell, run the command: "ollama run qwen3:14b"
 
-6. Provide your API keys in `./agentdriver/llm_core/api_keys.py`. Refer to the example file.
+7. To run this locally, you need to go to "/agentdriver/llm_core" and duplicate "api_keys.py.example"
+Rename the duplicate to "api_keys.py"
 
-> `OPENAI_ORG` is not required and can be empty.
+8. In the file "api_keys.py" modify the following:
+"""
+OPENAI_API_KEY = "ollama"
+OPENAI_ORG = ""
 
-7. Now you are good to go. Run an experiment by the following line. Hyperparameters are provided inside the code:
+OLLAMA_BASE_URL = "http://localhost:11434/v1"
+OLLAMA_MODEL = "qwen3:14b"
 
-```bash
-# For example, the *strict addition* with any *deletion* in main experiment
-python main_strict.py
-```
+FINETUNE_PLANNER_NAME = OLLAMA_MODEL
+"""
 
-8. To run *distribution shift* experiments, remember to modify the data split loading section in each code file (see `main_strict.py:120` for detail).
+The default local API is "http://localhost:11434/v1"
 
-9. To evaluate the results, run the following line:
+9. To run the baseline experiments:
+Memory enabled: python main_strict.py
+Memory disabled: python main_no_experience.py
 
-```bash
-# For example, if the experiment name (the result folder name) is `example_addstrict_exp`
-bash ./scripts/run_evaluation.sh uniad 2.5 results/example_addstrict_exp/prediction_results.pkl
-```
+10. To run the harmful memory detection and mitigation experiments:
+Sensitive Classifier: python main_harmful_memory_sensitive.py
+Balanced Classifier: python main_harmful_memory_balance.py
+Conservative Classifier: python main_harmful_memory_conservative.py
 
-10. To export the results from `.pkl` to `.json` for further processing, use `./result_extract.ipynb`. Modify the code inside it accordingly (see the content for detail).
-
-## Code Files
-
-- `main_strict.py`: Main experiment, strict addition, any deletion
-- `main_coarse.py`: Main experiment, coarse addition, any deletion
-- `main_strict_noisymemory.py`: Memory with noise applied, strict addition, any deletion
-- `main_coarse_noisymemory.py`: Memory with noise applied, coarse addition, any deletion
-- `main_noerrorprop.py`: Error-free variants of the main experiments. Make sure you have already obtained the results from the corresponding error-not-free main experiment, because the result file from that experiment is needed in this one.
+Results
+Results are saved in the "results" directory
