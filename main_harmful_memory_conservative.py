@@ -18,14 +18,15 @@ from agentdriver.perception.perception_agent import PerceptionAgent
 from agentdriver.planning.planning_agent import PlanningAgent
 from agentdriver.reasoning.reasoning_agent import ReasoningAgent
 
-from agentdriver.harmful_memory import harmful_memory_manager as harmful_manager
+# Import the memory classifier type and memory-free baseline results
+from agentdriver.harmful_memory import harmful_memory_manager_conservative as harmful_manager
 from agentdriver.harmful_memory.baseline_result_loader import memory_off_results
 
 
 
-EXPERIMENT_NAME = "qwen3_14b_200_harmful_memory_test_20"
+EXPERIMENT_NAME = "qwen3_14b_200_harmful_memory_conservative"
 RANDOM_SEED = 0
-N_SAMPLES = 20
+N_SAMPLES = 200
 SUCCESS_L2_THRESHOLD = 2.5  # add when l2 < this. 0.0 = no add, 99999.0 = always add
 DELETION_L2_THRESHOLD = 99999.0  # del when history l2 > this. 99999.0 = no deletion    #2.5
 DELETION_RETREIVAL_N_TIMES = 99999  # del when ret time >= this. 99999 = no deletion      #3
@@ -131,16 +132,15 @@ matching_tokens = sum(token in memory_off_results for token in token_list)
 
 print(f"Matching baseline tokens: {matching_tokens}/{len(token_list)}")
 
+# Identify the missing token to avoid invalid L2 comparisons
 missing_token = [
     token for token in token_list
     if token not in memory_off_results
 ]
 
 if missing_token:
-    raise RuntimeError(
-        f"Can't do paired comparison: {len(missing_token)} "
-        f"scenario tokens are not found in memory off baseline: {missing_token}"
-    )
+    print(f"Warning: {len(missing_token)} tokens missing from memory off baseline")
+    print(f"Experiment will continue. Misssing tokens will not be used for l2 comparisons")
 
 #### DISTRIBUTION SHIFT
 # val_tokens = split_data["distribshift"]
@@ -255,30 +255,33 @@ for token in tqdm(token_list, desc="Processing tokens"):
         # l2_error = np.linalg.norm(ground_truth - planning_traj, ord=2)
         l2_error = eval_l2(planning_traj, ground_truth, metric="uniad")
 
-        # Check if the current token alreadt exist
-        token_status = harmful_manager.token_look_up(memory_off_results, token)
-
-        memory_classification = None
+        # Initialise harmful memory classification and mitigation results
+        # Default values are used when baseline comparison is unavailable
+        memory_classification = "unavailable"
         delta_l2_error = None
         memory_off_l2_error = None
         memory_rejected = False
         should_delete_memory = False
         memory_deleted = False
 
-        if token_status == True:
-            # Retrieve memory off l2 error
-            memory_off_l2_error = harmful_manager.get_l2_error(memory_off_results, token)
+        # Retrieve the memory-free L2 error for the current scenario
+        baseline_record = memory_off_results.get(token)
+        
+        if isinstance(baseline_record, dict):
+            memory_off_l2_error = baseline_record.get("l2_error")
+
+        # Compare valid L2 errors to determine the impact of the memory
+        if harmful_manager.validate_l2_error(l2_error) and harmful_manager.validate_l2_error(memory_off_l2_error):
+            delta_l2_error = harmful_manager.calculate_delta_l2_error(l2_error, memory_off_l2_error)
             
-            # Validates the l2 error
-            mem_l2_status = harmful_manager.validate_l2_error(l2_error)
-            mem_off_l2_status = harmful_manager.validate_l2_error(memory_off_l2_error)
+            # Classify the memory impact
+            memory_classification = harmful_manager.memory_classifier(delta_l2_error)
 
-            if mem_l2_status == True and mem_off_l2_status == True:
-                # Calculates the delta l2 error
-                delta_l2_error = harmful_manager.calculate_delta_l2_error(l2_error, memory_off_l2_error)
-
-                # Classify the memory
-                memory_classification = harmful_manager.memory_classifier(delta_l2_error)
+            print(f"Memory off l2 error: {memory_off_l2_error}")
+            print(f"Delta l2 error: {delta_l2_error}")
+            print(f"Memory classification: {memory_classification}")
+        else:
+            print(f"Baseline comparison unavailable for token {token}, skipping harmful classification")
 
         # Record this retrieve. No matter if succeeded or not
         memory_token = memory_agent.experience_memory.retrieval_records.get(token)
@@ -287,9 +290,11 @@ for token in tqdm(token_list, desc="Processing tokens"):
         pred_mem_l2_error = None
         mem_gt_l2_error = None
 
+        # Skip harmful memory classification if no experience memory was retrieved
         if memory_token is None:
-            memory_classification = None
-
+            memory_classification = "unavailable"
+        
+        # Calculate the trajectory error
         if memory_token is not None:
             memory_traj = memory_agent.experience_memory.lookup_memory_fut_traj(memory_token)
             memory_agent.experience_memory.record_l2(memory_token, l2_error, time_step)
@@ -325,11 +330,12 @@ for token in tqdm(token_list, desc="Processing tokens"):
         with open(f"./results/{EXPERIMENT_NAME}/prediction_results.pkl", "wb") as f:
             pickle.dump(results, f)
 
-        # Record the results
+        # Initialise similarity metrics as unaviable when no memory is retrieved
         input_similarity = None
         output_similarity_cos = None
         output_similarity_exp = None
-
+        
+        # Calculate input and out similarity
         if memory_token is not None:
             input_similarity = (
                 memory_agent.experience_memory.get_input_exp_similarity_of_query(
@@ -350,7 +356,7 @@ for token in tqdm(token_list, desc="Processing tokens"):
             )
 
         # Harmful memory mitigation
-        if memory_classification is not None and memory_token is not None:
+        if memory_classification != "unavailable" and memory_token is not None:
             harmful_manager.record_memory(
                 memory_token,
                 l2_error,
@@ -359,25 +365,29 @@ for token in tqdm(token_list, desc="Processing tokens"):
                 memory_classification
             )
 
+            # Mark memories classified as reject to prevent their future retrieval
             if memory_classification == "reject":
                 memory_rejected = memory_agent.experience_memory.reject_memory(memory_token)
                 
                 if memory_rejected:
                     print(f"Memory {memory_token} marked for rejection")
 
+            # Checks the harmful memory retrieval count and the harmful rate
             should_delete_memory = harmful_manager.memory_deletion_review(harmful_manager.record_memory_result, memory_token)
 
             if should_delete_memory:
                 print(f"Memory {memory_token} marked for deletion")
 
-        
+        # Delete memories permanently if the memory pass the memory deletion review
         if should_delete_memory:
             current_memory_size = memory_agent.experience_memory.get_n_remaining_memory()
 
+            # Preserve the minimum memory size
             if current_memory_size > MIN_MEMORY_SIZE:
                 memory_agent.experience_memory.delete_memory(memory_token, time=time_step)
                 new_memory_size = memory_agent.experience_memory.get_n_remaining_memory()
 
+                # Verify deletion by checking that the memory count decreased
                 if new_memory_size == current_memory_size -1:
                     memory_deleted = True
                     print(f"Deleted harmful memory: {memory_token}")
@@ -447,10 +457,12 @@ for token in tqdm(token_list, desc="Processing tokens"):
         else:
             # Do nothing
             print(f"Memory size reaches minimum size, won't delete")
-
+        
+        # Save planning results together with harmful memory classification and mitigation
         records.append(
             {
                 "token": token,
+                "status": "completed",
                 "l2_error": l2_error,
                 "pred_mem_l2_error": pred_mem_l2_error,
                 "mem_gt_l2_error": mem_gt_l2_error,

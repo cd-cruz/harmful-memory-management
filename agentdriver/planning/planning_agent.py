@@ -11,7 +11,9 @@ from agentdriver.planning.motion_planning import (
     planning_single_inference,
 )
 
+# Modified for Qwen Compatibility
 class PlanningAgent:
+    # Change the model name to Qwen to run locally instead of the fine-tuned GPT model
     def __init__(self, model_name="qwen3:14b", verbose=True) -> None:
         self.verbose = verbose
         self.model_name = model_name # Note: this model must be a **finetuned** GPT model
@@ -32,7 +34,7 @@ class PlanningAgent:
         planning_target = self.generate_planning_target(data_dict)
         return planning_target
     
-    # Increase timeout
+    # Increase timeout to give Qwen more time to generate a trajectory prediction
     @timeout(180)
     def run(self, data_dict, data_sample):
         """Generate motion planning results for a single scene"""

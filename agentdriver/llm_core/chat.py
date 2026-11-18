@@ -6,7 +6,7 @@ from typing import List, Dict
 from agentdriver.llm_core.chat_utils import completion_with_backoff
 from agentdriver.llm_core.timeout import timeout
 
-# Change timeout to take account local LLM
+# Increase timeout to give the local Qwen model more time to respond
 @timeout(120)
 def run_one_round_conversation(
         full_messages: List[Dict],
@@ -31,9 +31,10 @@ def run_one_round_conversation(
         temperature=temperature,
     )
 
+    # Convert API reponse message into a dictionary
     response_message = response["choices"][0]["message"].to_dict_recursive()
-    # response_message = response.choices[0].message
 
+    # Debug empty Qwen responses by checking the finsh reason and reasoning output
     if not response_message.get("content"):
         print("\n[QWEN DEBUG] Empty assistant response")
         print(f"Finish reason: {response['choices'][0].get('finish_reason')}")
@@ -74,7 +75,7 @@ def run_one_round_conversation_with_functional_call(
         model=model_name,
         messages=full_messages,
         temperature=temperature,
-        # Changing functions to tools to make it compatible with Qwen
+        # Convert functions into tools format to make it compatible with Qwen
         tools = [{"type": "function", "function": info} for info in functional_calls_info],
         tool_choice = "auto"
     )

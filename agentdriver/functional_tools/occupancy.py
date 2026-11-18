@@ -37,13 +37,16 @@ get_occupancy_at_locations_for_timestep_info = {
     },
 }
 
+# Modified for Qwen Compatibility
 def get_occupancy_at_locations_for_timestep(locations, timestep, data_dict):
-    # Change for Qwen Compatibility
+    # Convert occupacy data into a numpy array for processing
     occ_map = np.asanyarray(data_dict["occupancy"])
     
+    # Remove the extra dimension if the occupancy array is 4D
     if occ_map.ndim == 4 and occ_map.shape[1] == 1:
         occ_map = np.squeeze(occ_map, axis=1)
     
+    # Validate the occupancy array if its 3D
     if occ_map.ndim != 3:
         raise ValueError(f"Invalid Occupancy shape: "
                          f"Expected a 3D array, recieved {occ_map.shape}")
@@ -95,13 +98,15 @@ check_occupancy_for_planned_trajectory_info = {
     },
 }
 
+# Modified for Qwen Compatibility
 def check_occupancy_for_planned_trajectory(trajectory, data_dict):
-    # Change for Qwen Compatibility
+    # Handle occupancy data with an extra dimension
     occ_map = np.asanyarray(data_dict["occupancy"])
     
     if occ_map.ndim == 4 and occ_map.shape[1] == 1:
         occ_map = np.squeeze(occ_map, axis=1)
-        
+
+    # Validate the occupancy array if its 3D
     if occ_map.ndim != 3:
         raise ValueError(f"Invalid Occupancy Shape: "
                          f"Expected a 3D array, recieved {occ_map.shape}")
@@ -129,13 +134,15 @@ def check_occupancy_for_planned_trajectory(trajectory, data_dict):
         prompts += f"The planned trajectory does not collide with any other objects.\n"
     return prompts, collision
 
+# Modified for Qwen Compatibility
 def check_occupancy_for_planned_trajectory_and_surrounding(trajectory, data_dict):
-    # Change for Qwen Compatibility
+    # Remove the extra dimension if present
     occ_map = np.asanyarray(data_dict["occupancy"])
     
     if occ_map.ndim == 4 and occ_map.shape[1] == 1:
         occ_map = np.squeeze(occ_map, axis = 1)
-        
+
+    # Ensure the occupancy array is in 3D  
     if occ_map.ndim != 3:
         raise ValueError(f"Invalid occupancy shape: "
                          f"expected a 3D array, received {occ_map.shape}")
@@ -218,10 +225,11 @@ def check_occupancy_for_planned_trajectory_correct(trajectory, data_dict, safe_m
     '''
     occ_map = np.asanyarray(data_dict["occupancy"])
     
-    # Handle occupancy arrays with an extra singleton dimension
+    # Remove the extra dimension from the occupancy data (Qwen keep addind "1" into the dimensions)
     if occ_map.ndim == 4 and occ_map.shape[1] == 1:
         occ_map = np.squeeze(occ_map, axis = 1)
-        
+
+    # Validate the array shape and ensure its in 3D  
     if occ_map.ndim != 3:
         raise ValueError(f"Invalid occupancy shape for token {token}: "
                          f"expected a 3D array, received {occ_map.shape}")

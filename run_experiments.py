@@ -1,18 +1,31 @@
 import subprocess
 import sys
 
-# Run multiple baseline sequentially
 if __name__ == "__main__":
-    print("Starting experiment X")
-    
-    subprocess.run([sys.executable, "main_strict.py"],
-                   check = True
-                   )
-    
-    print("Stating experiment Y")
-    
-    subprocess.run([sys.executable, "main_no_experience.py"],
-                    check = True
-                    )
-    
-    print("\nExperiment Completed")
+
+    experiments = [
+        ("Balanced Classifier", "main_harmful_memory_balance.py"),
+        ("Conservative Classifier", "main_harmful_memory_conservative.py"),
+        ("Sensitive Classifier", "main_harmful_memory_sensitive.py"),
+    ]
+
+    for experiment_name, filename in experiments:
+        print(f"\nStarting {experiment_name}", flush=True)
+
+        result = subprocess.run(
+            [sys.executable, filename],
+            check=False
+        )
+
+        if result.returncode == 0:
+            print(f"Completed {experiment_name}", flush=True)
+        else:
+            print(
+                f"WARNING: {experiment_name} finished with errors "
+                f"(exit code {result.returncode}).",
+                flush=True
+            )
+
+        print("Moving to next experiment...\n", flush=True)
+
+    print("\nAll experiments attempted!")

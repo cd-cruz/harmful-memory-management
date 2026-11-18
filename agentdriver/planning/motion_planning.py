@@ -13,6 +13,8 @@ from agentdriver.llm_core.chat import run_one_round_conversation
 from agentdriver.reasoning.collision_check import collision_check
 from agentdriver.reasoning.collision_optimization import collision_optimization
 from agentdriver.llm_core.api_keys import OPENAI_ORG, OPENAI_API_KEY
+
+# Import Qwen-specific prompt handling and trajectory parsing function
 from agentdriver.planning.qwen_compatibility import get_planner_prompt, parse_qwen_trajectory
 
 openai.organization = OPENAI_ORG
@@ -66,6 +68,7 @@ def planning_single_inference(
 
     token, user_message, assitant_message = generate_messages(data_sample, verbose=False)
 
+    # Select the planning prompt based on the LLM being used
     full_messages, response_message =  run_one_round_conversation(
         full_messages = [], 
         system_message = get_planner_prompt(system_message, planner_model_id), 
@@ -86,12 +89,14 @@ def planning_single_inference(
         "Ground Truth": assitant_message, 
     }
     
+    # Use a separate parser to handle Qwen's difffent trajectory output formats
     if planner_model_id == "qwen3:14b":
         try:
             traj = parse_qwen_trajectory(result)
         except ValueError:
             print(f"Invalid Qwen trajectory for token {token}:\n{result}")
             raise
+    
     else:
         traj = result[result.find('[') : result.find(']')+1]
         traj = ast.literal_eval(traj)

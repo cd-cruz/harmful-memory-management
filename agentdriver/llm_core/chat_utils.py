@@ -8,7 +8,7 @@ from tenacity import (
 
 @retry(wait=wait_random_exponential(min=1, max=10), stop=stop_after_attempt(3))
 def completion_with_backoff(**kwargs):
-    # Replace with Ollama adn Qwen3 to run locally
+    # Modified to work with Qwen3:14B and run locally
     openai.api_base = "http://localhost:11434/v1"
     openai.api_key = "ollama"
     return openai.ChatCompletion.create(**kwargs)

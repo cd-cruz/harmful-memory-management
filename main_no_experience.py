@@ -242,7 +242,7 @@ for token in tqdm(token_list, desc="Processing tokens"):
         output_similarity_cos = None
         output_similarity_exp = None
         
-        
+        # Evaluate planning success without adding successful scenarios to memory
         is_success = l2_error < SUCCESS_L2_THRESHOLD
         if is_success:
             print(F"Token {token} succeeded")

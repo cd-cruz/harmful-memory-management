@@ -14,6 +14,7 @@ from agentdriver.perception.perception_prompts import (
 )
 
 class PerceptionAgent:
+    # Modified the model_name to use Qwen3:14B instead of GPT
     def __init__(self, token, split, data_path, model_name = "qwen3:14b", verbose=True) -> None:
         self.token = token
         folder_name = Path("val") if "val" in split else Path("train")
@@ -29,12 +30,15 @@ class PerceptionAgent:
         self.num_call_occupancy_times = 1
         self.num_call_map_times = 1
 
+    # Modified to handle the newer tool call from Qwen; GPT uses old legacy function call
     def functional_call(self, response_message):
         # Call the function from GPT response
-        # Changing functions to tools to make it compatible with Qwen
+        # Convert functions to tools to make it compatible with Qwen
+        # EXtract the first tool call from Qwen's response
         tool_calls = response_message["tool_calls"]
         tool_call = tool_calls[0]
         
+        # Keep only the selected tool call for execution
         response_message["tool_calls"] = [tool_call]
         
         function_name = tool_call["function"]["name"]
@@ -51,6 +55,8 @@ class PerceptionAgent:
             function_prmopt, function_ret_data = function_returns
             if function_prmopt is None:
                 function_prmopt = ""
+            
+            # Store the tool call ID so the result can be linked to Qwen's request
             function_response = {
                 "name": function_name,
                 "args": function_args,
@@ -163,6 +169,7 @@ class PerceptionAgent:
         if self.verbose:
             print(detection_response["content"])
 
+        # Handles empty responses and normalise Qwen's YES decision
         if (detection_response.get("content") or "").strip().upper() == "YES":
             for _ in range(self.num_call_detection_times):
                 full_messages, detection_func_response = run_one_round_conversation_with_functional_call(
@@ -176,10 +183,11 @@ class PerceptionAgent:
                 if self.verbose:
                     print(detection_func_response["content"])
 
-                # Check if functional call is triggered
+                # Check whether Qwen has requested a tool call
                 if detection_func_response.get("tool_calls"):
                     function_response = self.functional_call(detection_func_response)
-                    # Append function response to conversation
+                    
+                    # Return the tool result
                     if function_response is not None:
                         full_messages.append(
                             {
@@ -208,6 +216,7 @@ class PerceptionAgent:
         if self.verbose:
             print(prediction_response["content"])
 
+        # Handles empty responses and normalise Qwen's YES decision
         if (prediction_response.get("content") or "").strip().upper() == "YES":
             for _ in range(self.num_call_prediction_times):
                 full_messages, prediction_func_response = run_one_round_conversation_with_functional_call(
@@ -221,10 +230,11 @@ class PerceptionAgent:
                 if self.verbose:
                     print(prediction_func_response["content"])
 
-                # Check if functional call is triggered
+                # Check whether Qwen has requested a tool call
                 if prediction_func_response.get("tool_calls"):
                     function_response = self.functional_call(prediction_func_response)
-                    # Append function response to conversation
+                    
+                    # Return the tool results
                     if function_response is not None:
                         full_messages.append(
                             {
@@ -253,6 +263,7 @@ class PerceptionAgent:
         if self.verbose:
             print(occupancy_response["content"])
 
+        # Handles empty responses and normalise Qwen's YES decision
         if (occupancy_response.get("content") or "").strip().upper() == "YES":
             for _ in range(self.num_call_occupancy_times):
                 full_messages, occupancy_func_response = run_one_round_conversation_with_functional_call(
@@ -266,10 +277,11 @@ class PerceptionAgent:
                 if self.verbose:
                     print(occupancy_func_response["content"])
 
-                # Check if functional call is triggered
+                # Check whether Qwen has requested a tool call
                 if occupancy_func_response.get("tool_calls"):
                     function_response = self.functional_call(occupancy_func_response)
-                    # Append function response to conversation
+                    
+                    # Return the tool result
                     if function_response is not None:
                         full_messages.append(
                             {
@@ -298,6 +310,7 @@ class PerceptionAgent:
         if self.verbose:
             print(map_response["content"])
 
+        # Handles empty responses and normalise Qwen's YES decision
         if (map_response.get("content") or "").strip().upper() == "YES":
             for _ in range(self.num_call_map_times):
                 full_messages, map_func_response = run_one_round_conversation_with_functional_call(
@@ -311,10 +324,11 @@ class PerceptionAgent:
                 if self.verbose:
                     print(map_func_response["content"])
 
-                # Check if functional call is triggered
+                # Check whether Qwen has requested a tool call
                 if map_func_response.get("tool_calls"):
                     function_response = self.functional_call(map_func_response)
-                    # Append function response to conversation
+                    
+                    # Return the tool result
                     if function_response is not None:
                         full_messages.append(
                             {
@@ -353,6 +367,7 @@ class PerceptionAgent:
         working_memory.update({"ego_prompts": ego_prompts})
         return perception_prompts, working_memory
 
+    # Modified the timeout to allow additional time for Qwen to complete perception
     @timeout(600)
     def run(self):
         ego_prompts, ego_data = self.func_agent.get_ego_states()

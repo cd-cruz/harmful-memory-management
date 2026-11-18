@@ -18,7 +18,13 @@ from agentdriver.perception.perception_agent import PerceptionAgent
 from agentdriver.planning.planning_agent import PlanningAgent
 from agentdriver.reasoning.reasoning_agent import ReasoningAgent
 
-EXPERIMENT_NAME = "qwen3_14b_200_baseline_memory_on_180_limit_disable_memory_management"
+# Import the memory classifier type and memory-free baseline results
+from agentdriver.harmful_memory import harmful_memory_manager_sensitive as harmful_manager
+from agentdriver.harmful_memory.baseline_result_loader import memory_off_results
+
+
+
+EXPERIMENT_NAME = "qwen3_14b_200_harmful_memory_sensitive"
 RANDOM_SEED = 0
 N_SAMPLES = 200
 SUCCESS_L2_THRESHOLD = 2.5  # add when l2 < this. 0.0 = no add, 99999.0 = always add
@@ -27,7 +33,7 @@ DELETION_RETREIVAL_N_TIMES = 99999  # del when ret time >= this. 99999 = no dele
 CLEANUP_RETRIEVAL_N_TIMES = 0  # clean up when ret time < this. 0 = no cleanup            #1
 EXIST_TIME_THRESHOLD = 99999  # clean up when exist time > this. 99999 = no cleanup        #500
 MIN_MEMORY_SIZE = 1  # won't delete when < this
-MAX_MEMORY_SIZE = 180  # force delete (ignore l2 threshold) mem when > this (but will still add)
+MAX_MEMORY_SIZE = 99999  # force delete (ignore l2 threshold) mem when > this (but will still add)
 ADD_GT = False  # WE NEVER USED THIS OPTION. TO RUN ERROR-FREE EXPERIMENT, USE `./main_noerrorprop.py`.
 
 
@@ -121,6 +127,21 @@ val_tokens = split_data["val"]
 token_list = random.sample(val_tokens, N_SAMPLES)
 assert "distribshift" not in EXPERIMENT_NAME
 
+# Verify scenario tokens match the memory free baseline
+matching_tokens = sum(token in memory_off_results for token in token_list)
+
+print(f"Matching baseline tokens: {matching_tokens}/{len(token_list)}")
+
+# Identify the missing token to avoid invalid L2 comparisons
+missing_token = [
+    token for token in token_list
+    if token not in memory_off_results
+]
+
+if missing_token:
+    print(f"Warning: {len(missing_token)} tokens missing from memory off baseline")
+    print(f"Experiment will continue. Misssing tokens will not be used for l2 comparisons")
+
 #### DISTRIBUTION SHIFT
 # val_tokens = split_data["distribshift"]
 # token_list = val_tokens
@@ -175,6 +196,8 @@ invalid_tokens = []
 success_count = 0
 records = []
 time_step = 0
+
+
 for token in tqdm(token_list, desc="Processing tokens"):
     sys.stdout.flush()
     # Make sure the token is in the language_agent tokens
@@ -227,17 +250,56 @@ for token in tqdm(token_list, desc="Processing tokens"):
 
         ##### Evaluation
         ground_truth = gt_data[token][0]
+
         # Compute L2 error
         # l2_error = np.linalg.norm(ground_truth - planning_traj, ord=2)
         l2_error = eval_l2(planning_traj, ground_truth, metric="uniad")
+
+        # Initialise harmful memory classification and mitigation results
+        # Default values are used when baseline comparison is unavailable
+        memory_classification = "unavailable"
+        delta_l2_error = None
+        memory_off_l2_error = None
+        memory_rejected = False
+        should_delete_memory = False
+        memory_deleted = False
+
+        # Retrieve the memory-free L2 error for the current scenario
+        baseline_record = memory_off_results.get(token)
+        
+        if isinstance(baseline_record, dict):
+            memory_off_l2_error = baseline_record.get("l2_error")
+
+        # Compare valid L2 errors to determine the impact of the memory
+        if harmful_manager.validate_l2_error(l2_error) and harmful_manager.validate_l2_error(memory_off_l2_error):
+            delta_l2_error = harmful_manager.calculate_delta_l2_error(l2_error, memory_off_l2_error)
+            
+            # Classify the memory impact
+            memory_classification = harmful_manager.memory_classifier(delta_l2_error)
+
+            print(f"Memory off l2 error: {memory_off_l2_error}")
+            print(f"Delta l2 error: {delta_l2_error}")
+            print(f"Memory classification: {memory_classification}")
+        else:
+            print(f"Baseline comparison unavailable for token {token}, skipping harmful classification")
+
         # Record this retrieve. No matter if succeeded or not
-        memory_token = memory_agent.experience_memory.get_retrieved_memory(token)
-        memory_traj = memory_agent.experience_memory.lookup_memory_fut_traj(
-            memory_token
-        )
-        memory_agent.experience_memory.record_l2(memory_token, l2_error, time_step)
-        pred_mem_l2_error = eval_l2(planning_traj, memory_traj, metric="uniad")
-        mem_gt_l2_error = eval_l2(memory_traj, ground_truth, metric="uniad")
+        memory_token = memory_agent.experience_memory.retrieval_records.get(token)
+        
+        memory_traj = None
+        pred_mem_l2_error = None
+        mem_gt_l2_error = None
+
+        # Skip harmful memory classification if no experience memory was retrieved
+        if memory_token is None:
+            memory_classification = "unavailable"
+
+        # Calculate the trajectory error
+        if memory_token is not None:
+            memory_traj = memory_agent.experience_memory.lookup_memory_fut_traj(memory_token)
+            memory_agent.experience_memory.record_l2(memory_token, l2_error, time_step)
+            pred_mem_l2_error = eval_l2(planning_traj, memory_traj, metric="uniad")
+            mem_gt_l2_error = eval_l2(memory_traj, ground_truth, metric="uniad")
 
         print(f"Pred vs. GT  L2: {l2_error}")
         print(f"Pred vs. mem L2: {pred_mem_l2_error}")
@@ -248,7 +310,19 @@ for token in tqdm(token_list, desc="Processing tokens"):
         if is_success:
             print(f"Token {token} succeeded")
             success_count += 1
-            # remove memory entry
+            ####### Add the successful token to the memory database
+            # Convert working_memory to memory
+            memory_entry = convert_working_memory_to_memory(
+                working_memory,
+                perception_agent,
+                # planning_traj,  # add coarse
+                ground_truth if ADD_GT else planning_traj,
+            )
+            is_memory_full = memory_agent.experience_memory.add_memory(
+                new_memory=memory_entry,
+                time=time_step,
+            )
+            print(f"Added memory {token}")
         else:
             print(f"Token {token} failed")
 
@@ -256,30 +330,139 @@ for token in tqdm(token_list, desc="Processing tokens"):
         with open(f"./results/{EXPERIMENT_NAME}/prediction_results.pkl", "wb") as f:
             pickle.dump(results, f)
 
-        # Record the results
-        input_similarity = (
-            memory_agent.experience_memory.get_input_exp_similarity_of_query(
-                token, data_dict=working_memory["ego_data"]
-            )
-        )
-        output_similarity_cos = (
-            memory_agent.experience_memory.get_output_cosine_similarity_of_query(
-                token, planning_traj
-            )
-        )
-        output_similarity_exp = (
-            memory_agent.experience_memory.get_output_exp_similarity_of_query(
-                token, planning_traj
-            )
-        )
+        # Initialise similarity metrics as unaviable when no memory is retrieved
+        input_similarity = None
+        output_similarity_cos = None
+        output_similarity_exp = None
 
-        assert (
-            memory_agent.experience_memory.get_n_remaining_memory() == MAX_MEMORY_SIZE
-        ), "Fixed memory bank size change unexpectedly"
+        # Calculate input and out similarity
+        if memory_token is not None:
+            input_similarity = (
+                memory_agent.experience_memory.get_input_exp_similarity_of_query(
+                    token, data_dict=working_memory["ego_data"]
+                )
+            )
+        
+            output_similarity_cos = (
+                memory_agent.experience_memory.get_output_cosine_similarity_of_query(
+                    token, planning_traj
+                )   
+            )
+        
+            output_similarity_exp = (
+                memory_agent.experience_memory.get_output_exp_similarity_of_query(
+                    token, planning_traj
+                )
+            )
 
+        # Harmful memory mitigation
+        if memory_classification != "unavailable" and memory_token is not None:
+            harmful_manager.record_memory(
+                memory_token,
+                l2_error,
+                memory_off_l2_error,
+                delta_l2_error,
+                memory_classification
+            )
+
+            # Mark memories classified as reject to prevent their future retrieval
+            if memory_classification == "reject":
+                memory_rejected = memory_agent.experience_memory.reject_memory(memory_token)
+                
+                if memory_rejected:
+                    print(f"Memory {memory_token} marked for rejection")
+
+            # Checks the harmful memory retrieval count and the harmful rate
+            should_delete_memory = harmful_manager.memory_deletion_review(harmful_manager.record_memory_result, memory_token)
+
+            if should_delete_memory:
+                print(f"Memory {memory_token} marked for deletion")
+
+        # Delete memories permanently if the memory pass the memory deletion review
+        if should_delete_memory:
+            current_memory_size = memory_agent.experience_memory.get_n_remaining_memory()
+
+            # Preserve the minimum memory size
+            if current_memory_size > MIN_MEMORY_SIZE:
+                memory_agent.experience_memory.delete_memory(memory_token, time=time_step)
+                new_memory_size = memory_agent.experience_memory.get_n_remaining_memory()
+
+                # Verify deletion by checking that the memory count decreased
+                if new_memory_size == current_memory_size -1:
+                    memory_deleted = True
+                    print(f"Deleted harmful memory: {memory_token}")
+                else:
+                    raise RuntimeError(f"Memory deleteion not confirm: {memory_token}")
+
+
+        ####### Clean up dead memory
+        current_memory_size = memory_agent.experience_memory.get_n_remaining_memory()
+        if current_memory_size > MIN_MEMORY_SIZE:
+            dead_memory_tokens = memory_agent.experience_memory.find_dead_memory2(
+                current_time_step=time_step,
+                past_time_window=EXIST_TIME_THRESHOLD,
+                retrieval_n_times=CLEANUP_RETRIEVAL_N_TIMES,
+            )
+            if current_memory_size - len(dead_memory_tokens) < MIN_MEMORY_SIZE:
+                # Make sure we only clean-up to MIN_MEMORY_SIZE
+                dead_memory_tokens = dead_memory_tokens[
+                    : current_memory_size - MIN_MEMORY_SIZE
+                ]
+            if len(dead_memory_tokens) > 0:
+                for dead_memory_token in dead_memory_tokens:
+                    _ = memory_agent.experience_memory.delete_memory(
+                        dead_memory_token, time=time_step
+                    )
+                print(
+                    f"Deleted {len(dead_memory_tokens)} dead memories: {dead_memory_tokens}"
+                )
+        else:
+            # Do nothing
+            print(f"Memory size reaches minimum size, won't clean up dead memory")
+
+        # Do cleanup first, because there's a chance cleanup didn't clean enough
+        # memory, therefore current_memory_size still greater than MAX_MEMORY_SIZE.
+        # In that case, a force deletion will be triggered
+        ####### Delete memory
+        current_memory_size = memory_agent.experience_memory.get_n_remaining_memory()
+        if current_memory_size > MAX_MEMORY_SIZE:
+            # Force deletion
+            print(
+                f"Memory size exceeds maximum size: {current_memory_size}/{MAX_MEMORY_SIZE}"
+            )
+            worst_memory_token = memory_agent.experience_memory.find_worst_memory(
+                l2_threshold=-1.0,
+                deletion_retrieval_n_times=-1,
+            )
+            assert worst_memory_token is not None, "Worst memory token is None"
+            worst_memory_average_l2 = memory_agent.experience_memory.delete_memory(
+                worst_memory_token, time=time_step
+            )
+            print(
+                f"Deleted worst memory: {worst_memory_token} with average L2 {worst_memory_average_l2}"
+            )
+        elif current_memory_size > MIN_MEMORY_SIZE:
+            # Regular deletion
+            worst_memory_token = memory_agent.experience_memory.find_worst_memory(
+                l2_threshold=DELETION_L2_THRESHOLD,
+                deletion_retrieval_n_times=DELETION_RETREIVAL_N_TIMES,
+            )
+            if worst_memory_token is not None:
+                worst_memory_average_l2 = memory_agent.experience_memory.delete_memory(
+                    worst_memory_token, time=time_step
+                )
+                print(
+                    f"Deleted worst memory: {worst_memory_token} with average L2 {worst_memory_average_l2}"
+                )
+        else:
+            # Do nothing
+            print(f"Memory size reaches minimum size, won't delete")
+
+        # Save planning results together with harmful memory classification and mitigation
         records.append(
             {
                 "token": token,
+                "status": "completed",
                 "l2_error": l2_error,
                 "pred_mem_l2_error": pred_mem_l2_error,
                 "mem_gt_l2_error": mem_gt_l2_error,
@@ -288,9 +471,18 @@ for token in tqdm(token_list, desc="Processing tokens"):
                 "gt_traj": ground_truth,
                 "memory_token": memory_token,
                 "memory_traj": memory_traj,
+                "memory_retrieved": memory_token is not None,
                 "input_similarity": input_similarity,
                 "output_similarity_cos": output_similarity_cos,
                 "output_similarity_exp": output_similarity_exp,
+
+                # Harmful memory manager results
+                "memory_off_l2_error": memory_off_l2_error,
+                "delta_l2_error": delta_l2_error,
+                "memory_classification": memory_classification,
+                "memory_rejected": memory_rejected,
+                "should_delete_memory": should_delete_memory,
+                "memory_deleted": memory_deleted,
             }
         )
 
@@ -299,6 +491,10 @@ for token in tqdm(token_list, desc="Processing tokens"):
         retrieval_records, retrieval_records_reverse = (
             memory_agent.experience_memory.get_retrieval_records()
         )
+        with open(f"./results/{EXPERIMENT_NAME}/harmful_memory_records.pkl", "wb") as f:
+            pickle.dump(harmful_manager.record_memory_result, f)
+        with open(f"./results/{EXPERIMENT_NAME}/rejected_tokens.pkl", "wb") as f:
+            pickle.dump(memory_agent.experience_memory.rejected_tokens, f)
         with open(f"./results/{EXPERIMENT_NAME}/retrieval_records.pkl", "wb") as f:
             pickle.dump(retrieval_records, f)
         with open(
@@ -330,7 +526,7 @@ for token in tqdm(token_list, desc="Processing tokens"):
         print(f"An error occurred for token {token}:")
         print(f"{type(e).__name__}: {e}")
         invalid_tokens.append(token)
-        # raise e       # TO DEBUG, UNCOMMENT THIS
+        # raise       # TO DEBUG, UNCOMMENT THIS
         continue
 
 print(f"Invalid tokens: {invalid_tokens}")
